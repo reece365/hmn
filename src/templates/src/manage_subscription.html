@@ -1,0 +1,27 @@
+{{ template "base-2024.html" . }}
+
+{{ define "content" }}
+<div class="mw-site center ph3 pv4">
+    <h1>Manage Subscription</h1>
+    <p>
+        Status:
+        {{ if .User }}
+        {{ if .User.IsSubscribed }}
+        <span class="c--success">Subscribed</span>
+    <form method="POST" action="{{ .CancelSubscriptionUrl }}" class="mt3">
+        {{ csrftoken .Session }}
+        <button type="submit" class="btn">Cancel Subscription</button>
+    </form>
+    {{ else }}
+    <span class="c--error">Not Subscribed</span>
+    <form method="POST" action="{{ .SubscribeUrl }}" class="mt3">
+        {{ csrftoken .Session }}
+        <button type="submit" class="btn btn-primary">Subscribe Now</button>
+    </form>
+    {{ end }}
+    {{ else }}
+    <p class="mt3">Please log in to manage your subscription.</p>
+    {{ end }}
+    </p>
+</div>
+{{ end }}

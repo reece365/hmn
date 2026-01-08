@@ -250,6 +250,8 @@ func UserToTemplate(u *models.User) User {
 		IsEduTester: u.CanSeeUnpublishedEducationContent(),
 		IsEduAuthor: u.CanAuthorEducation(),
 
+		IsSubscribed: u.IsSubscribed,
+
 		DiscordUser: discordUser,
 	}
 }

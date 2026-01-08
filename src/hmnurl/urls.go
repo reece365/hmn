@@ -329,9 +329,24 @@ func BuildUserProfile(username string) string {
 }
 
 var RegexUserSettings = regexp.MustCompile(`^/settings$`)
+var RegexManageSubscription = regexp.MustCompile(`^/manageSubscription$`)
+var RegexSubscribe = regexp.MustCompile(`^/subscribe$`)
+var RegexCancelSubscription = regexp.MustCompile(`^/cancelSubscription$`)
 
 func BuildUserSettings(section string) string {
 	return UrlWithFragment("/settings", nil, section)
+}
+
+func BuildManageSubscription() string {
+	return Url("/manageSubscription", nil)
+}
+
+func BuildSubscribe() string {
+	return Url("/subscribe", nil)
+}
+
+func BuildCancelSubscription() string {
+	return Url("/cancelSubscription", nil)
 }
 
 /*

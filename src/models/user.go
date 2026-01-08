@@ -46,6 +46,8 @@ type User struct {
 	DiscordSaveShowcase                 bool `db:"discord_save_showcase"`
 	DiscordDeleteSnippetOnMessageDelete bool `db:"discord_delete_snippet_on_message_delete"`
 
+	IsSubscribed bool `db:"is_subscribed"`
+
 	MarkedAllReadAt time.Time `db:"marked_all_read_at"`
 
 	// Non-db fields, to be filled in by fetch helpers
