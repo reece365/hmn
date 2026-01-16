@@ -99,4 +99,10 @@ var Config = HMNConfig{
 		// Provide a token here to enable the email bounce monitor.
 		TransactionalStreamToken: "",
 	},
+	Stripe: StripeConfig{
+		SecretKey:      "",
+		PublishableKey: "",
+		WebhookSecret:  "",
+		PriceID:        "", // price_...
+	},
 }

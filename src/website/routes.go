@@ -46,6 +46,8 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 		redirectToHMN,
 	)
 
+	routes.POST(hmnurl.RegexStripeWebhook, StripeWebhook)
+
 	routes.GET(hmnurl.RegexEsBuild, func(c *RequestContext) ResponseData {
 		if buildcss.ActiveServerPort != 0 {
 			var err error

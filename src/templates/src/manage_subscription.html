@@ -10,7 +10,7 @@
         <span class="c--success">Subscribed</span>
     <form method="POST" action="{{ .CancelSubscriptionUrl }}" class="mt3">
         {{ csrftoken .Session }}
-        <button type="submit" class="btn">Cancel Subscription</button>
+        <button type="submit" class="btn">Manage Billing / Cancel</button>
     </form>
     {{ else }}
     <span class="c--error">Not Subscribed</span>

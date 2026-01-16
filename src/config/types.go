@@ -11,8 +11,8 @@ type Environment string
 
 const (
 	Live Environment = "live"
-	Beta             = "beta"
-	Dev              = "dev"
+	Beta Environment = "beta"
+	Dev  Environment = "dev"
 )
 
 type HMNConfig struct {
@@ -34,6 +34,14 @@ type HMNConfig struct {
 	Calendars         []CalendarSource
 	EsBuild           EsBuildConfig
 	Postmark          PostmarkConfig
+	Stripe            StripeConfig
+}
+
+type StripeConfig struct {
+	SecretKey      string
+	PublishableKey string
+	WebhookSecret  string
+	PriceID        string
 }
 
 type PostgresConfig struct {

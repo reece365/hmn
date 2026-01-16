@@ -48,6 +48,9 @@ type User struct {
 
 	IsSubscribed bool `db:"is_subscribed"`
 
+	StripeCustomerID     *string `db:"stripe_customer_id"`
+	StripeSubscriptionID *string `db:"stripe_subscription_id"`
+
 	MarkedAllReadAt time.Time `db:"marked_all_read_at"`
 
 	// Non-db fields, to be filled in by fetch helpers

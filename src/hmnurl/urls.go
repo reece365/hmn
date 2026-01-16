@@ -332,6 +332,7 @@ var RegexUserSettings = regexp.MustCompile(`^/settings$`)
 var RegexManageSubscription = regexp.MustCompile(`^/manageSubscription$`)
 var RegexSubscribe = regexp.MustCompile(`^/subscribe$`)
 var RegexCancelSubscription = regexp.MustCompile(`^/cancelSubscription$`)
+var RegexStripeWebhook = regexp.MustCompile(`^/stripeWebhook$`)
 
 func BuildUserSettings(section string) string {
 	return UrlWithFragment("/settings", nil, section)
@@ -347,6 +348,10 @@ func BuildSubscribe() string {
 
 func BuildCancelSubscription() string {
 	return Url("/cancelSubscription", nil)
+}
+
+func BuildStripeWebhook() string {
+	return Url("/stripeWebhook", nil)
 }
 
 /*
