@@ -2,18 +2,25 @@ package website
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"git.handmade.network/hmn/hmn/src/config"
+	"git.handmade.network/hmn/hmn/src/db"
+	"git.handmade.network/hmn/hmn/src/email"
 	"git.handmade.network/hmn/hmn/src/hmnurl"
 	"git.handmade.network/hmn/hmn/src/logging"
+	"git.handmade.network/hmn/hmn/src/models"
 	"git.handmade.network/hmn/hmn/src/oops"
 	"git.handmade.network/hmn/hmn/src/templates"
 	"github.com/stripe/stripe-go/v81"
 	stripePortal "github.com/stripe/stripe-go/v81/billingportal/session"
 	stripeSession "github.com/stripe/stripe-go/v81/checkout/session"
+	"github.com/stripe/stripe-go/v81/subscription"
 	"github.com/stripe/stripe-go/v81/webhook"
 )
 
@@ -124,6 +131,38 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			logging.Error().Err(err).Int("userID", userID).Msg("failed to update user subscription status")
 		} else {
 			logging.Info().Int("userID", userID).Msg("user subscription activated")
+
+			// Send thank you email
+			user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE id = $1", userID)
+			if err != nil {
+				logging.Error().Err(err).Int("userID", userID).Msg("failed to fetch user for thank you email")
+			} else {
+				var renewalDate *time.Time
+				if session.Subscription != nil {
+					stripe.Key = config.Config.Stripe.SecretKey
+					sub, err := subscription.Get(session.Subscription.ID, nil)
+					if err != nil {
+						logging.Error().Err(err).Str("subID", session.Subscription.ID).Msg("failed to fetch subscription from Stripe for thank you email")
+					} else {
+						rd := time.Unix(sub.CurrentPeriodEnd, 0)
+						renewalDate = &rd
+					}
+				}
+				amountStr := ""
+				if session.AmountTotal > 0 {
+					currency := strings.ToUpper(string(session.Currency))
+					symbol := "$"
+					if currency != "USD" {
+						symbol = currency + " "
+					}
+					amountStr = fmt.Sprintf("%s%.2f", symbol, float64(session.AmountTotal)/100.0)
+				}
+
+				err = email.SendThankYouEmail(user.Email, user.BestName(), renewalDate, amountStr, c.Perf)
+				if err != nil {
+					logging.Error().Err(err).Int("userID", userID).Msg("failed to send thank you email")
+				}
+			}
 		}
 
 	case "customer.subscription.deleted":

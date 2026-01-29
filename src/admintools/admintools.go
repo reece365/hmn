@@ -300,6 +300,8 @@ func init() {
 				err = email.SendRegistrationEmail(toAddress, toName, "test_user", "test_token", "", p)
 			case "passwordreset":
 				err = email.SendPasswordReset(toAddress, toName, "test_user", "test_token", time.Now().Add(time.Hour*24), p)
+			case "thankyou":
+				err = email.SendThankYouEmail(toAddress, toName, nil, "", p)
 			default:
 				fmt.Printf("You must provide a valid email type\n\n")
 				cmd.Usage()
@@ -569,8 +571,8 @@ func init() {
 				fmt.Printf("%v", err)
 			}
 
-			if len(errorOut.Bytes()) > 0 {
-				fmt.Printf("FFMpeg error:\n%s\n", string(errorOut.Bytes()))
+			if errorOut.Len() > 0 {
+				fmt.Printf("FFMpeg error:\n%s\n", errorOut.String())
 			}
 
 			out, err := os.Create(outFile)
