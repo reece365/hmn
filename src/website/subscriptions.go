@@ -165,6 +165,33 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			}
 		}
 
+	case "customer.subscription.updated":
+		var sub stripe.Subscription
+		err := json.Unmarshal(event.Data.Raw, &sub)
+		if err != nil {
+			return ResponseData{StatusCode: http.StatusBadRequest}
+		}
+
+		if sub.CancelAtPeriodEnd {
+			user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE stripe_customer_id = $1", sub.Customer.ID)
+			if err != nil {
+				logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to fetch user for cancellation email")
+			} else {
+				var expirationDate *time.Time
+				if sub.CancelAt > 0 {
+					t := time.Unix(sub.CancelAt, 0)
+					expirationDate = &t
+				} else if sub.CurrentPeriodEnd > 0 {
+					t := time.Unix(sub.CurrentPeriodEnd, 0)
+					expirationDate = &t
+				}
+				err = email.SendSubscriptionCancelledEmail(user.Email, user.BestName(), expirationDate, c.Perf)
+				if err != nil {
+					logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to send cancellation initiation email")
+				}
+			}
+		}
+
 	case "customer.subscription.deleted":
 		var sub stripe.Subscription
 		err := json.Unmarshal(event.Data.Raw, &sub)
@@ -177,6 +204,19 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to handle subscription deletion")
 		} else {
 			logging.Info().Str("customerID", sub.Customer.ID).Msg("user subscription deactivated")
+
+			// Only send cancellation email here if it wasn't a "cancel at period end" (which already sent an email)
+			if !sub.CancelAtPeriodEnd {
+				user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE stripe_customer_id = $1", sub.Customer.ID)
+				if err != nil {
+					logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to fetch user for cancellation email")
+				} else {
+					err = email.SendSubscriptionCancelledEmail(user.Email, user.BestName(), nil, c.Perf)
+					if err != nil {
+						logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to send cancellation email")
+					}
+				}
+			}
 		}
 	}
 

@@ -104,6 +104,48 @@ func SendThankYouEmail(
 	return nil
 }
 
+type SubscriptionCancelledEmailData struct {
+	Name           string
+	HomepageUrl    string
+	ExpirationDate string
+}
+
+func SendSubscriptionCancelledEmail(
+	toAddress string,
+	toName string,
+	expirationDate *time.Time,
+	perf *perf.RequestPerf,
+) error {
+	defer perf.StartBlock("EMAIL", "Subscription cancelled email").End()
+
+	expirationDateStr := ""
+	if expirationDate != nil && !expirationDate.IsZero() {
+		expirationDateStr = expirationDate.Format("January 2, 2006")
+	}
+
+	b1 := perf.StartBlock("EMAIL", "Rendering template")
+	defer b1.End()
+	contents, err := renderTemplate("email_subscription_cancelled.html", SubscriptionCancelledEmailData{
+		Name:           toName,
+		HomepageUrl:    hmnurl.BuildHomepage(),
+		ExpirationDate: expirationDateStr,
+	})
+	if err != nil {
+		return err
+	}
+	b1.End()
+
+	b2 := perf.StartBlock("EMAIL", "Sending email")
+	defer b2.End()
+	err = sendMail(toAddress, toName, "[Handmade Network] Subscription cancelled", contents)
+	if err != nil {
+		return oops.New(err, "Failed to send email")
+	}
+	b2.End()
+
+	return nil
+}
+
 type ExistingAccountEmailData struct {
 	Name        string
 	Username    string

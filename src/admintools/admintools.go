@@ -302,6 +302,8 @@ func init() {
 				err = email.SendPasswordReset(toAddress, toName, "test_user", "test_token", time.Now().Add(time.Hour*24), p)
 			case "thankyou":
 				err = email.SendThankYouEmail(toAddress, toName, nil, "", p)
+			case "cancelled":
+				err = email.SendSubscriptionCancelledEmail(toAddress, toName, nil, p)
 			default:
 				fmt.Printf("You must provide a valid email type\n\n")
 				cmd.Usage()
