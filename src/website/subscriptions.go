@@ -17,12 +17,8 @@ import (
 	"git.handmade.network/hmn/hmn/src/models"
 	"git.handmade.network/hmn/hmn/src/oops"
 	"git.handmade.network/hmn/hmn/src/templates"
-	"github.com/stripe/stripe-go/v81"
-	stripePortal "github.com/stripe/stripe-go/v81/billingportal/session"
-	"github.com/stripe/stripe-go/v81/charge"
-	stripeSession "github.com/stripe/stripe-go/v81/checkout/session"
-	"github.com/stripe/stripe-go/v81/subscription"
-	"github.com/stripe/stripe-go/v81/webhook"
+	"github.com/stripe/stripe-go/v84"
+	"github.com/stripe/stripe-go/v84/webhook"
 )
 
 type ManageSubscriptionTemplateData struct {
@@ -42,14 +38,14 @@ func ManageSubscription(c *RequestContext) ResponseData {
 }
 
 func Subscribe(c *RequestContext) ResponseData {
-	stripe.Key = config.Config.Stripe.SecretKey
+	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
 
-	params := &stripe.CheckoutSessionParams{
+	params := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		SuccessURL:        stripe.String(hmnurl.BuildManageSubscription()),
 		CancelURL:         stripe.String(hmnurl.BuildManageSubscription()),
 		ClientReferenceID: stripe.String(strconv.Itoa(c.CurrentUser.ID)),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
+		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
 				Price:    stripe.String(config.Config.Stripe.PriceID),
 				Quantity: stripe.Int64(1),
@@ -63,7 +59,7 @@ func Subscribe(c *RequestContext) ResponseData {
 		params.CustomerEmail = nil
 	}
 
-	s, err := stripeSession.New(params)
+	s, err := sc.V1CheckoutSessions.Create(c, params)
 	if err != nil {
 		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to create checkout session"))
 	}
@@ -76,13 +72,13 @@ func CancelSubscription(c *RequestContext) ResponseData {
 		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
 	}
 
-	stripe.Key = config.Config.Stripe.SecretKey
+	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
 
-	params := &stripe.BillingPortalSessionParams{
+	params := &stripe.BillingPortalSessionCreateParams{
 		Customer:  stripe.String(*c.CurrentUser.StripeCustomerID),
 		ReturnURL: stripe.String(hmnurl.BuildManageSubscription()),
 	}
-	ps, err := stripePortal.New(params)
+	ps, err := sc.V1BillingPortalSessions.Create(c, params)
 	if err != nil {
 		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to create portal session"))
 	}
@@ -126,8 +122,22 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			break
 		}
 
-		_, err = c.Conn.Exec(c, "UPDATE hmn_user SET is_subscribed = true, stripe_customer_id = $1, stripe_subscription_id = $2 WHERE id = $3",
-			session.Customer.ID, session.Subscription.ID, userID)
+		var renewalDate *time.Time
+		sc := stripe.NewClient(config.Config.Stripe.SecretKey)
+		// In v84, CurrentPeriodEnd is on SubscriptionItem, not Subscription.
+		// We need to fetch the expanded subscription or just get the items.
+		sub, err := sc.V1Subscriptions.Retrieve(c, session.Subscription.ID, &stripe.SubscriptionRetrieveParams{
+			Expand: []*string{stripe.String("items")},
+		})
+		if err != nil {
+			logging.Error().Err(err).Str("subID", session.Subscription.ID).Msg("failed to fetch subscription for renewal date")
+		} else if sub.Items != nil && len(sub.Items.Data) > 0 {
+			rd := time.Unix(sub.Items.Data[0].CurrentPeriodEnd, 0)
+			renewalDate = &rd
+		}
+
+		_, err = c.Conn.Exec(c, "UPDATE hmn_user SET is_subscribed = true, stripe_customer_id = $1, stripe_subscription_id = $2, subscription_status = 'active', current_period_end = $4 WHERE id = $3",
+			session.Customer.ID, session.Subscription.ID, userID, renewalDate)
 		if err != nil {
 			logging.Error().Err(err).Int("userID", userID).Msg("failed to update user subscription status")
 		} else {
@@ -138,17 +148,6 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			if err != nil {
 				logging.Error().Err(err).Int("userID", userID).Msg("failed to fetch user for thank you email")
 			} else {
-				var renewalDate *time.Time
-				if session.Subscription != nil {
-					stripe.Key = config.Config.Stripe.SecretKey
-					sub, err := subscription.Get(session.Subscription.ID, nil)
-					if err != nil {
-						logging.Error().Err(err).Str("subID", session.Subscription.ID).Msg("failed to fetch subscription from Stripe for thank you email")
-					} else {
-						rd := time.Unix(sub.CurrentPeriodEnd, 0)
-						renewalDate = &rd
-					}
-				}
 				amountStr := ""
 				if session.AmountTotal > 0 {
 					currency := strings.ToUpper(string(session.Currency))
@@ -173,16 +172,21 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			return ResponseData{StatusCode: http.StatusBadRequest}
 		}
 
-		currentPeriodEnd := time.Unix(sub.CurrentPeriodEnd, 0)
+		var currentPeriodEnd *time.Time
+		if sub.Items != nil && len(sub.Items.Data) > 0 {
+			t := time.Unix(sub.Items.Data[0].CurrentPeriodEnd, 0)
+			currentPeriodEnd = &t
+		}
+
 		_, err = c.Conn.Exec(c, `
 			UPDATE hmn_user 
 			SET 
 				subscription_status = $1, 
-				current_period_end = $2, 
-				cancel_at_period_end = $3,
-				is_subscribed = ($1 = 'active' OR $1 = 'trialing')
-			WHERE stripe_customer_id = $4
-		`, sub.Status, currentPeriodEnd, sub.CancelAtPeriodEnd, sub.Customer.ID)
+				cancel_at_period_end = $2,
+				is_subscribed = ($1 = 'active' OR $1 = 'trialing'),
+				current_period_end = $4
+			WHERE stripe_customer_id = $3
+		`, sub.Status, sub.CancelAtPeriodEnd, sub.Customer.ID, currentPeriodEnd)
 		if err != nil {
 			logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to update user subscription from webhook")
 		}
@@ -195,9 +199,6 @@ func StripeWebhook(c *RequestContext) ResponseData {
 				var expirationDate *time.Time
 				if sub.CancelAt > 0 {
 					t := time.Unix(sub.CancelAt, 0)
-					expirationDate = &t
-				} else if sub.CurrentPeriodEnd > 0 {
-					t := time.Unix(sub.CurrentPeriodEnd, 0)
 					expirationDate = &t
 				}
 				err = email.SendSubscriptionCancelledEmail(user.Email, user.BestName(), expirationDate, c.Perf)
@@ -254,41 +255,64 @@ func StripeWebhook(c *RequestContext) ResponseData {
 		// Record payment
 		var methodType, last4, brand *string
 		var feeCents, netCents *int
-		targetCharge := inv.Charge
-		if targetCharge != nil {
-			// Always fetch the charge to ensure expansion of balance_transaction
-			stripe.Key = config.Config.Stripe.SecretKey
-			var err error
-			targetCharge, err = charge.Get(targetCharge.ID, &stripe.ChargeParams{
-				Params: stripe.Params{
-					Expand: []*string{stripe.String("balance_transaction")},
-				},
-			})
+
+		sc := stripe.NewClient(config.Config.Stripe.SecretKey)
+		params := &stripe.InvoicePaymentListParams{
+			Invoice: stripe.String(inv.ID),
+		}
+		params.AddExpand("data.payment.charge.balance_transaction")
+		params.AddExpand("data.payment.payment_intent.latest_charge")
+		var targetCharge *stripe.Charge
+		sc.V1InvoicePayments.List(c, params)(func(ip *stripe.InvoicePayment, err error) bool {
 			if err != nil {
-				logging.Error().Err(err).Str("chargeID", inv.Charge.ID).Msg("failed to fetch charge for invoice.paid")
+				return false
+			}
+			if ip.Payment != nil {
+				if ip.Payment.Charge != nil {
+					targetCharge = ip.Payment.Charge
+					return false
+				}
+				if ip.Payment.PaymentIntent != nil && ip.Payment.PaymentIntent.LatestCharge != nil {
+					targetCharge = ip.Payment.PaymentIntent.LatestCharge
+					return false
+				}
+			}
+			return true
+		})
+
+		if targetCharge != nil {
+			if targetCharge.PaymentMethodDetails != nil {
+				mt := string(targetCharge.PaymentMethodDetails.Type)
+				methodType = &mt
+				if targetCharge.PaymentMethodDetails.Card != nil {
+					l4 := targetCharge.PaymentMethodDetails.Card.Last4
+					last4 = &l4
+					b := string(targetCharge.PaymentMethodDetails.Card.Brand)
+					brand = &b
+				} else if targetCharge.PaymentMethodDetails.USBankAccount != nil {
+					l4 := targetCharge.PaymentMethodDetails.USBankAccount.Last4
+					last4 = &l4
+					b := targetCharge.PaymentMethodDetails.USBankAccount.BankName
+					brand = &b
+				}
 			}
 
-			if targetCharge != nil {
-				if targetCharge.PaymentMethodDetails != nil {
-					dt := string(targetCharge.PaymentMethodDetails.Type)
-					methodType = &dt
-					if targetCharge.PaymentMethodDetails.Card != nil {
-						l4 := targetCharge.PaymentMethodDetails.Card.Last4
-						last4 = &l4
-						b := string(targetCharge.PaymentMethodDetails.Card.Brand)
-						brand = &b
-					} else if targetCharge.PaymentMethodDetails.USBankAccount != nil {
-						l4 := targetCharge.PaymentMethodDetails.USBankAccount.Last4
-						last4 = &l4
-						b := targetCharge.PaymentMethodDetails.USBankAccount.BankName
-						brand = &b
-					}
-				}
-				if targetCharge.BalanceTransaction != nil {
-					f := int(targetCharge.BalanceTransaction.Fee)
-					feeCents = &f
-					n := int(targetCharge.BalanceTransaction.Net)
-					netCents = &n
+			// If balance transaction wasn't expanded (e.g. PI case), fetch it
+			if targetCharge.BalanceTransaction != nil {
+				fc := int(targetCharge.BalanceTransaction.Fee)
+				feeCents = &fc
+				nc := int(targetCharge.BalanceTransaction.Net)
+				netCents = &nc
+			} else {
+				// Re-retrieve charge with expansion to get fee info
+				fullCharge, err := sc.V1Charges.Retrieve(c, targetCharge.ID, &stripe.ChargeRetrieveParams{
+					Expand: []*string{stripe.String("balance_transaction")},
+				})
+				if err == nil && fullCharge.BalanceTransaction != nil {
+					fc := int(fullCharge.BalanceTransaction.Fee)
+					feeCents = &fc
+					nc := int(fullCharge.BalanceTransaction.Net)
+					netCents = &nc
 				}
 			}
 		}
