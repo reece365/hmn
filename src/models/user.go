@@ -51,6 +51,10 @@ type User struct {
 	StripeCustomerID     *string `db:"stripe_customer_id"`
 	StripeSubscriptionID *string `db:"stripe_subscription_id"`
 
+	SubscriptionStatus *string    `db:"subscription_status"`
+	CurrentPeriodEnd   *time.Time `db:"current_period_end"`
+	CancelAtPeriodEnd  bool       `db:"cancel_at_period_end"`
+
 	MarkedAllReadAt time.Time `db:"marked_all_read_at"`
 
 	// Non-db fields, to be filled in by fetch helpers

@@ -19,6 +19,7 @@ import (
 	"git.handmade.network/hmn/hmn/src/templates"
 	"github.com/stripe/stripe-go/v81"
 	stripePortal "github.com/stripe/stripe-go/v81/billingportal/session"
+	"github.com/stripe/stripe-go/v81/charge"
 	stripeSession "github.com/stripe/stripe-go/v81/checkout/session"
 	"github.com/stripe/stripe-go/v81/subscription"
 	"github.com/stripe/stripe-go/v81/webhook"
@@ -172,6 +173,20 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			return ResponseData{StatusCode: http.StatusBadRequest}
 		}
 
+		currentPeriodEnd := time.Unix(sub.CurrentPeriodEnd, 0)
+		_, err = c.Conn.Exec(c, `
+			UPDATE hmn_user 
+			SET 
+				subscription_status = $1, 
+				current_period_end = $2, 
+				cancel_at_period_end = $3,
+				is_subscribed = ($1 = 'active' OR $1 = 'trialing')
+			WHERE stripe_customer_id = $4
+		`, sub.Status, currentPeriodEnd, sub.CancelAtPeriodEnd, sub.Customer.ID)
+		if err != nil {
+			logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to update user subscription from webhook")
+		}
+
 		if sub.CancelAtPeriodEnd {
 			user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE stripe_customer_id = $1", sub.Customer.ID)
 			if err != nil {
@@ -199,7 +214,7 @@ func StripeWebhook(c *RequestContext) ResponseData {
 			return ResponseData{StatusCode: http.StatusBadRequest}
 		}
 
-		_, err = c.Conn.Exec(c, "UPDATE hmn_user SET is_subscribed = false, stripe_subscription_id = NULL WHERE stripe_customer_id = $1", sub.Customer.ID)
+		_, err = c.Conn.Exec(c, "UPDATE hmn_user SET is_subscribed = false, stripe_subscription_id = NULL, subscription_status = 'canceled' WHERE stripe_customer_id = $1", sub.Customer.ID)
 		if err != nil {
 			logging.Error().Err(err).Str("customerID", sub.Customer.ID).Msg("failed to handle subscription deletion")
 		} else {
@@ -217,6 +232,79 @@ func StripeWebhook(c *RequestContext) ResponseData {
 					}
 				}
 			}
+		}
+
+	case "invoice.paid":
+		var inv stripe.Invoice
+		err := json.Unmarshal(event.Data.Raw, &inv)
+		if err != nil {
+			return ResponseData{StatusCode: http.StatusBadRequest}
+		}
+
+		if inv.Customer == nil {
+			break
+		}
+
+		user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE stripe_customer_id = $1", inv.Customer.ID)
+		if err != nil {
+			logging.Error().Err(err).Str("customerID", inv.Customer.ID).Msg("failed to fetch user for invoice.paid")
+			break
+		}
+
+		// Record payment
+		var methodType, last4, brand *string
+		var feeCents, netCents *int
+		targetCharge := inv.Charge
+		if targetCharge != nil {
+			// Always fetch the charge to ensure expansion of balance_transaction
+			stripe.Key = config.Config.Stripe.SecretKey
+			var err error
+			targetCharge, err = charge.Get(targetCharge.ID, &stripe.ChargeParams{
+				Params: stripe.Params{
+					Expand: []*string{stripe.String("balance_transaction")},
+				},
+			})
+			if err != nil {
+				logging.Error().Err(err).Str("chargeID", inv.Charge.ID).Msg("failed to fetch charge for invoice.paid")
+			}
+
+			if targetCharge != nil {
+				if targetCharge.PaymentMethodDetails != nil {
+					dt := string(targetCharge.PaymentMethodDetails.Type)
+					methodType = &dt
+					if targetCharge.PaymentMethodDetails.Card != nil {
+						l4 := targetCharge.PaymentMethodDetails.Card.Last4
+						last4 = &l4
+						b := string(targetCharge.PaymentMethodDetails.Card.Brand)
+						brand = &b
+					} else if targetCharge.PaymentMethodDetails.USBankAccount != nil {
+						l4 := targetCharge.PaymentMethodDetails.USBankAccount.Last4
+						last4 = &l4
+						b := targetCharge.PaymentMethodDetails.USBankAccount.BankName
+						brand = &b
+					}
+				}
+				if targetCharge.BalanceTransaction != nil {
+					f := int(targetCharge.BalanceTransaction.Fee)
+					feeCents = &f
+					n := int(targetCharge.BalanceTransaction.Net)
+					netCents = &n
+				}
+			}
+		}
+
+		_, err = c.Conn.Exec(c, `
+			INSERT INTO user_payment (user_id, stripe_invoice_id, amount_cents, currency, payment_method_type, card_last4, card_brand, paid_at, stripe_fee_cents, net_amount_cents)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			ON CONFLICT (stripe_invoice_id) DO UPDATE SET 
+				payment_method_type = EXCLUDED.payment_method_type,
+				card_last4 = EXCLUDED.card_last4,
+				card_brand = EXCLUDED.card_brand,
+				stripe_fee_cents = EXCLUDED.stripe_fee_cents,
+				net_amount_cents = EXCLUDED.net_amount_cents
+		`, user.ID, inv.ID, inv.AmountPaid, string(inv.Currency), methodType, last4, brand, time.Unix(inv.StatusTransitions.PaidAt, 0), feeCents, netCents)
+		if err != nil {
+			logging.Error().Err(err).Int("userID", user.ID).Msg("failed to record user payment")
 		}
 	}
 

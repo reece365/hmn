@@ -1,27 +1,67 @@
 {{ template "base-2024.html" . }}
 
 {{ define "content" }}
-<div class="mw-site center ph3 pv4">
-    <h1>Manage Subscription</h1>
-    <p>
-        Status:
+<div class="mw-site center ph3 pv4 post-content">
+    <h2 class="f3 mb4">Manage your subscription</h2>
+
+    <div class="mw7">
         {{ if .User }}
         {{ if .User.IsSubscribed }}
-        <span class="c--success">Subscribed</span>
-    <form method="POST" action="{{ .CancelSubscriptionUrl }}" class="mt3">
-        {{ csrftoken .Session }}
-        <button type="submit" class="btn">Manage Billing / Cancel</button>
-    </form>
-    {{ else }}
-    <span class="c--error">Not Subscribed</span>
-    <form method="POST" action="{{ .SubscribeUrl }}" class="mt3">
-        {{ csrftoken .Session }}
-        <button type="submit" class="btn btn-primary">Subscribe Now</button>
-    </form>
-    {{ end }}
-    {{ else }}
-    <p class="mt3">Please log in to manage your subscription.</p>
-    {{ end }}
-    </p>
+        <p>Thank you for being a supporter! Your recurring donation helps us maintain the site, host events, and
+            advocate for better software.</p>
+
+        {{ template "supporter_card" . }}
+        {{ else }}
+        <p>The Handmade Network is supported by the community. By becoming a supporter, you help us stay independent and
+            focused on our mission. You'll also get some nice perks on our Discord!</p>
+
+        {{ template "supporter_card" . }}
+        {{ end }}
+        {{ else }}
+        <p class="mt3">Please <a href="{{ .LoginPageUrl }}">log in</a> to manage your subscription.</p>
+        {{ end }}
+    </div>
+</div>
+{{ end }}
+
+{{ define "supporter_card" }}
+<div class="bg3 pa4 br2 mv4">
+    <h3 class="f4 mt0 mb3">Supporter Benefits</h3>
+    <ul class="list pa0 ma0 f6">
+        <li class="flex items-start g3 mb3">
+            <div class="svgicon f4 flex-shrink-0">{{ svg "discord" }}</div>
+            <div>
+                <div class="b">Discord Badge & Role</div>
+                <div class="c--dim">Show off your support with a special role and badge on our Discord.</div>
+            </div>
+        </li>
+        <li class="flex items-start g3 mb3">
+            <div class="svgicon f4 flex-shrink-0">{{ svg "hmn_circuit" }}</div>
+            <div>
+                <div class="b">Support Handmade</div>
+                <div class="c--dim">Help fund our mission to put the software industry back on the right track.</div>
+            </div>
+        </li>
+        <li class="flex items-start g3">
+            <div class="svgicon f4 flex-shrink-0">{{ svg "arrow-right-up" }}</div>
+            <div>
+                <div class="b">And More</div>
+                <div class="c--dim">Get access to private channels and future supporter-only features.</div>
+            </div>
+        </li>
+    </ul>
+    <hr class="mv3 b--white-10">
+    <div class="flex justify-between items-center">
+        <span class="f4 b">$5.00/mo</span>
+        {{ if .User }}
+        <form method="POST"
+            action="{{ if .User.IsSubscribed }}{{ .CancelSubscriptionUrl }}{{ else }}{{ .SubscribeUrl }}{{ end }}">
+            {{ csrftoken .Session }}
+            <button type="submit" class="btn btn-primary">
+                {{ if .User.IsSubscribed }}Manage or cancel{{ else }}Support Handmade{{ end }}
+            </button>
+        </form>
+        {{ end }}
+    </div>
 </div>
 {{ end }}
