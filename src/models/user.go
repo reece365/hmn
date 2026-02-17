@@ -54,6 +54,7 @@ type User struct {
 	SubscriptionStatus *string    `db:"subscription_status"`
 	CurrentPeriodEnd   *time.Time `db:"current_period_end"`
 	CancelAtPeriodEnd  bool       `db:"cancel_at_period_end"`
+	ThankYouEmailSent  bool       `db:"thank_you_email_sent"`
 
 	MarkedAllReadAt time.Time `db:"marked_all_read_at"`
 
