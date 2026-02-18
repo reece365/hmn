@@ -26,20 +26,46 @@ type ManageSubscriptionTemplateData struct {
 	templates.BaseData
 	SubscribeUrl          string
 	CancelSubscriptionUrl string
+	CurrentCurrencySymbol string
 }
 
 func ManageSubscription(c *RequestContext) ResponseData {
+	var symbol string = "$"
+	if c.CurrentUser != nil {
+		var lastCurrency string
+		err := c.Conn.QueryRow(c, `
+			SELECT currency 
+			FROM user_payment 
+			WHERE user_id = $1 
+			ORDER BY paid_at DESC 
+			LIMIT 1
+		`, c.CurrentUser.ID).Scan(&lastCurrency)
+		if err == nil {
+			if strings.ToLower(lastCurrency) == "eur" {
+				symbol = "€"
+			} else {
+				symbol = "$"
+			}
+		}
+	}
+
 	var res ResponseData
 	res.MustWriteTemplate("manage_subscription.html", ManageSubscriptionTemplateData{
 		BaseData:              getBaseData(c, "Manage Subscription", nil),
 		SubscribeUrl:          hmnurl.BuildSubscribe(),
 		CancelSubscriptionUrl: hmnurl.BuildCancelSubscription(),
+		CurrentCurrencySymbol: symbol,
 	}, c.Perf)
 	return res
 }
 
 func Subscribe(c *RequestContext) ResponseData {
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
+
+	priceID := c.Req.FormValue("price_id")
+	if priceID == "" {
+		priceID = config.Config.Stripe.PriceID
+	}
 
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
@@ -48,7 +74,7 @@ func Subscribe(c *RequestContext) ResponseData {
 		ClientReferenceID: stripe.String(strconv.Itoa(c.CurrentUser.ID)),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
-				Price:    stripe.String(config.Config.Stripe.PriceID),
+				Price:    stripe.String(priceID),
 				Quantity: stripe.Int64(1),
 			},
 		},

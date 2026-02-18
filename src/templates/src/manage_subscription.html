@@ -52,11 +52,39 @@
     </ul>
     <hr class="mv3 b--white-10">
     <div class="flex justify-between items-center">
-        <span class="f4 b">$5.00/mo</span>
+        <span class="f4 b">
+            {{ if (and .User .User.IsSubscribed) }}
+            <span id="display-symbol">{{ .CurrentCurrencySymbol }}</span>
+            {{ else }}
+            <span id="currency-dropdown-trigger" class="pointer" title="Change currency"
+                style="position: relative; display: inline-block; border-bottom: 1px dotted rgba(255,255,255,0.3); padding-bottom: 1px;">
+                <span id="display-symbol">{{ .CurrentCurrencySymbol }}</span><small
+                    style="margin-left: 2px; opacity: 0.6; font-size: 0.6em; vertical-align: middle;">▼</small>
+                <div id="currency-dropdown" class="bg3 br2 shadow-2 dn"
+                    style="position: absolute; top: 125%; left: 0; z-index: 100; min-width: 100px; border: 1px solid rgba(255,255,255,0.1); padding: 4px; font-weight: normal;">
+                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Subscribe in USD"
+                        style="transition: background 0.1s;" data-symbol="$" data-price-id="" data-amount="5.00"
+                        onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'"
+                        onmouseout="this.style.backgroundColor='transparent'">
+                        $ USD
+                    </div>
+                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Subscribe in EUR"
+                        style="transition: background 0.1s;" data-symbol="€"
+                        data-price-id="price_1T2GhMC5nzOagkysG5ohH2ex" data-amount="5.00"
+                        onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'"
+                        onmouseout="this.style.backgroundColor='transparent'">
+                        € EUR
+                    </div>
+                </div>
+            </span>
+            {{ end }}
+            <span id="display-amount">5.00</span>/mo
+        </span>
         {{ if .User }}
-        <form method="POST"
+        <form id="subscribe-form" method="POST"
             action="{{ if .User.IsSubscribed }}{{ .CancelSubscriptionUrl }}{{ else }}{{ .SubscribeUrl }}{{ end }}">
             {{ csrftoken .Session }}
+            <input type="hidden" name="price_id" id="price-id-input" value="">
             <button type="submit" class="btn btn-primary">
                 {{ if .User.IsSubscribed }}Manage or cancel{{ else }}Support Handmade{{ end }}
             </button>
@@ -64,4 +92,41 @@
         {{ end }}
     </div>
 </div>
+
+<script>
+    (function () {
+        const trigger = document.getElementById('currency-dropdown-trigger');
+        const dropdown = document.getElementById('currency-dropdown');
+        const symbolDisplay = document.getElementById('display-symbol');
+        const amountDisplay = document.getElementById('display-amount');
+        const priceInput = document.getElementById('price-id-input');
+        const options = document.querySelectorAll('.currency-option');
+
+        if (!trigger || !dropdown) return;
+
+        trigger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            dropdown.classList.toggle('dn');
+        });
+
+        document.addEventListener('click', function () {
+            dropdown.classList.add('dn');
+        });
+
+        options.forEach(option => {
+            option.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const symbol = this.getAttribute('data-symbol');
+                const priceId = this.getAttribute('data-price-id');
+                const amount = this.getAttribute('data-amount');
+
+                symbolDisplay.textContent = symbol;
+                amountDisplay.textContent = amount;
+                if (priceInput) priceInput.value = priceId;
+
+                dropdown.classList.add('dn');
+            });
+        });
+    })();
+</script>
 {{ end }}
