@@ -202,6 +202,13 @@ func StripeWebhook(c *RequestContext) ResponseData {
 		} else {
 			logging.Error().Err(err).Msg("failed to unmarshal invoice.paid")
 		}
+	case "invoice.payment_failed":
+		var inv stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &inv); err == nil {
+			handleInvoicePaymentFailed(c, sc, &inv)
+		} else {
+			logging.Error().Err(err).Msg("failed to unmarshal invoice.payment_failed")
+		}
 	}
 
 	return ResponseData{StatusCode: http.StatusOK}
@@ -390,6 +397,40 @@ func handleInvoicePaid(c *RequestContext, sc *stripe.Client, inv *stripe.Invoice
 		logging.Error().Err(err).Int("userID", user.ID).Msg("failed to update renewal date from invoice")
 	} else {
 		attemptThankYouEmail(c, user.ID, inv.AmountPaid, inv.Currency)
+	}
+}
+
+func handleInvoicePaymentFailed(c *RequestContext, sc *stripe.Client, inv *stripe.Invoice) {
+	if inv.Customer == nil {
+		return
+	}
+
+	user, err := db.QueryOne[models.User](c, c.Conn, "SELECT $columns FROM hmn_user WHERE stripe_customer_id = $1", inv.Customer.ID)
+	if err != nil {
+		logging.Error().Err(err).Str("customerID", inv.Customer.ID).Msg("failed to fetch user for invoice.payment_failed")
+		return
+	}
+
+	amountStr := ""
+	if inv.AmountDue > 0 {
+		curr := strings.ToUpper(string(inv.Currency))
+		symbol := "$"
+		if curr != "USD" {
+			symbol = curr + " "
+		}
+		amountStr = fmt.Sprintf("%s%.2f", symbol, float64(inv.AmountDue)/100.0)
+	}
+
+	var nextAttemptDate *time.Time
+	if inv.NextPaymentAttempt > 0 {
+		t := time.Unix(inv.NextPaymentAttempt, 0)
+		nextAttemptDate = &t
+	}
+
+	logging.Info().Int("userID", user.ID).Str("invoiceID", inv.ID).Msg("sending payment failed email")
+	err = email.SendPaymentFailedEmail(user.Email, user.BestName(), amountStr, nextAttemptDate, c.Perf)
+	if err != nil {
+		logging.Error().Err(err).Int("userID", user.ID).Msg("failed to send payment failed email")
 	}
 }
 

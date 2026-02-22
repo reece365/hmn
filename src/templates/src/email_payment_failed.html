@@ -1,0 +1,28 @@
+<p>
+    Hello {{ .Name }},
+</p>
+<p>
+    We were unable to process your recurring donation payment to <a href="{{ .HomepageUrl }}"><b>Handmade
+            Network</b></a>.
+</p>
+{{ if .Amount }}
+<p>
+    The charge of <b>{{ .Amount }}</b> to your payment method on file was declined.
+</p>
+{{ end }}
+<p>
+    Please update your payment details to keep your subscription active. You can manage your subscription at <a
+        href="{{ .HomepageUrl }}/manageSubscription">{{ .HomepageUrl }}/manageSubscription</a>.
+</p>
+{{ if .NextAttemptDate }}
+<p>
+    Stripe will automatically retry the charge on <b>{{ .NextAttemptDate }}</b>. If the payment continues to fail, your
+    subscription may be cancelled.
+</p>
+{{ else }}
+<p>
+    If the payment issue is not resolved, your subscription may be cancelled.
+</p>
+{{ end }}
+<p>Thanks,<br />
+    The Handmade Network staff.</p>

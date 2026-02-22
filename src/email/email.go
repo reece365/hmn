@@ -146,6 +146,51 @@ func SendSubscriptionCancelledEmail(
 	return nil
 }
 
+type PaymentFailedEmailData struct {
+	Name            string
+	HomepageUrl     string
+	Amount          string
+	NextAttemptDate string
+}
+
+func SendPaymentFailedEmail(
+	toAddress string,
+	toName string,
+	amount string,
+	nextAttemptDate *time.Time,
+	perf *perf.RequestPerf,
+) error {
+	defer perf.StartBlock("EMAIL", "Payment failed email").End()
+
+	nextAttemptDateStr := ""
+	if nextAttemptDate != nil && !nextAttemptDate.IsZero() {
+		nextAttemptDateStr = nextAttemptDate.Format("January 2, 2006")
+	}
+
+	b1 := perf.StartBlock("EMAIL", "Rendering template")
+	defer b1.End()
+	contents, err := renderTemplate("email_payment_failed.html", PaymentFailedEmailData{
+		Name:            toName,
+		HomepageUrl:     hmnurl.BuildHomepage(),
+		Amount:          amount,
+		NextAttemptDate: nextAttemptDateStr,
+	})
+	if err != nil {
+		return err
+	}
+	b1.End()
+
+	b2 := perf.StartBlock("EMAIL", "Sending email")
+	defer b2.End()
+	err = sendMail(toAddress, toName, "[Handmade Network] Payment failed", contents)
+	if err != nil {
+		return oops.New(err, "Failed to send email")
+	}
+	b2.End()
+
+	return nil
+}
+
 type ExistingAccountEmailData struct {
 	Name        string
 	Username    string
