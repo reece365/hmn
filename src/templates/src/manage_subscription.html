@@ -11,6 +11,25 @@
             advocate for better software.</p>
 
         {{ template "supporter_card" . }}
+
+        {{ if .PaymentHistory }}
+        <details class="bg3 pa4 br2 mv4">
+            <summary class="f4 mt0 mb0 pointer flex justify-between items-center" style="list-style: none;">Payment
+                History <small class="c--dim" style="font-weight: normal;">▼</small></summary>
+            <ul class="list pa0 ma0 f6 mt3">
+                {{ range .PaymentHistory }}
+                <li class="flex items-start g3 mb3">
+                    <div class="f4 flex-shrink-0">·</div>
+                    <div>
+                        <div class="b">{{ .Date }}</div>
+                        <div class="c--dim">{{ .Amount }}{{ if .CardInfo }} · {{ .CardInfo }}{{ end }}</div>
+                    </div>
+                </li>
+                {{ end }}
+            </ul>
+        </details>
+        {{ end }}
+
         {{ else }}
         <p>The Handmade Network is supported by the community. By becoming a supporter, you help us stay independent and
             focused on our mission. You'll also get some nice perks on our Discord!</p>
@@ -36,7 +55,7 @@
             </div>
         </li>
         <li class="flex items-start g3 mb3">
-            <div class="svgicon f4 flex-shrink-0">{{ svg "hmn_circuit" }}</div>
+            <div class="svgicon f4 flex-shrink-0">{{ svg "heart" }}</div>
             <div>
                 <div class="b">Support Handmade</div>
                 <div class="c--dim">Help fund our mission to put the software industry back on the right track.</div>

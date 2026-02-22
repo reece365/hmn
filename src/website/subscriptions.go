@@ -22,30 +22,58 @@ import (
 	"github.com/stripe/stripe-go/v84/webhook"
 )
 
+type PaymentHistoryItem struct {
+	Date     string
+	Amount   string
+	CardInfo string
+}
+
 type ManageSubscriptionTemplateData struct {
 	templates.BaseData
 	SubscribeUrl          string
 	CancelSubscriptionUrl string
 	CurrentCurrencySymbol string
+	PaymentHistory        []PaymentHistoryItem
 }
 
 func ManageSubscription(c *RequestContext) ResponseData {
-	var symbol string = "$"
-	if c.CurrentUser != nil {
-		var lastCurrency string
-		err := c.Conn.QueryRow(c, `
-			SELECT currency 
-			FROM user_payment 
-			WHERE user_id = $1 
-			ORDER BY paid_at DESC 
-			LIMIT 1
-		`, c.CurrentUser.ID).Scan(&lastCurrency)
-		if err == nil {
-			if strings.ToLower(lastCurrency) == "eur" {
-				symbol = "€"
-			} else {
-				symbol = "$"
+
+	// If the user just completed checkout, Stripe redirects with a session_id.
+	// Verify it so we can show the correct "subscribed" view even if webhooks
+	// haven't updated the DB yet.
+	if c.CurrentUser != nil && !c.CurrentUser.IsSubscribed {
+		if sessionID := c.Req.URL.Query().Get("session_id"); sessionID != "" {
+			sc := stripe.NewClient(config.Config.Stripe.SecretKey)
+			session, err := sc.V1CheckoutSessions.Retrieve(c, sessionID, nil)
+			if err == nil && session.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
+				c.CurrentUser.IsSubscribed = true
 			}
+		}
+	}
+
+	var history []PaymentHistoryItem
+	if c.CurrentUser != nil && c.CurrentUser.IsSubscribed {
+		payments, _ := db.Query[models.UserPayment](c, c.Conn, "SELECT $columns FROM user_payment WHERE user_id = $1 ORDER BY paid_at DESC", c.CurrentUser.ID)
+		for _, p := range payments {
+			sym := "$"
+			if strings.EqualFold(p.Currency, "eur") {
+				sym = "€"
+			}
+			card := ""
+			if p.CardBrand != nil {
+				card = strings.ToUpper(*p.CardBrand)
+			}
+			if p.CardLast4 != nil {
+				if card != "" {
+					card += " "
+				}
+				card += "•••• " + *p.CardLast4
+			}
+			history = append(history, PaymentHistoryItem{
+				Date:     p.PaidAt.UTC().Format("Jan 2, 2006"),
+				Amount:   fmt.Sprintf("%s%.2f", sym, float64(p.AmountCents)/100.0),
+				CardInfo: card,
+			})
 		}
 	}
 
@@ -54,7 +82,8 @@ func ManageSubscription(c *RequestContext) ResponseData {
 		BaseData:              getBaseData(c, "Manage Subscription", nil),
 		SubscribeUrl:          hmnurl.BuildSubscribe(),
 		CancelSubscriptionUrl: hmnurl.BuildCancelSubscription(),
-		CurrentCurrencySymbol: symbol,
+		CurrentCurrencySymbol: "$",
+		PaymentHistory:        history,
 	}, c.Perf)
 	return res
 }
@@ -69,7 +98,7 @@ func Subscribe(c *RequestContext) ResponseData {
 
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL:        stripe.String(hmnurl.BuildManageSubscription()),
+		SuccessURL:        stripe.String(hmnurl.BuildManageSubscription() + "?session_id={CHECKOUT_SESSION_ID}"),
 		CancelURL:         stripe.String(hmnurl.BuildManageSubscription()),
 		ClientReferenceID: stripe.String(strconv.Itoa(c.CurrentUser.ID)),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
@@ -356,7 +385,7 @@ func handleInvoicePaid(c *RequestContext, sc *stripe.Client, inv *stripe.Invoice
 
 	// Update renewal date from invoice period end
 	renewalDate := time.Unix(inv.PeriodEnd, 0)
-	_, err = c.Conn.Exec(c, "UPDATE hmn_user SET current_period_end = $1 WHERE id = $2", renewalDate, user.ID)
+	_, err = c.Conn.Exec(c, "UPDATE hmn_user SET current_period_end = $1, is_subscribed = true WHERE id = $2", renewalDate, user.ID)
 	if err != nil {
 		logging.Error().Err(err).Int("userID", user.ID).Msg("failed to update renewal date from invoice")
 	} else {
