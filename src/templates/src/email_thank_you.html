@@ -7,11 +7,11 @@
 
 {{ if and .RenewalDate .Amount }}
 <p>
-    Your payment method on file will automatically be charged for {{ .Amount }} on <b>{{ .RenewalDate }}</b>.
+    Your payment method on file will automatically be charged again for {{ .Amount }} on <b>{{ .RenewalDate }}</b>.
 </p>
 {{ else if .RenewalDate }}
 <p>
-    Your payment method on file will automatically be charged on <b>{{ .RenewalDate }}</b>.
+    Your payment method on file will automatically be charged again on <b>{{ .RenewalDate }}</b>.
 </p>
 {{ else if .Amount }}
 <p>
