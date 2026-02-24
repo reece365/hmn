@@ -32,8 +32,13 @@ type ManageSubscriptionTemplateData struct {
 	templates.BaseData
 	SubscribeUrl          string
 	CancelSubscriptionUrl string
+	ResumeSubscriptionUrl string
 	CurrentCurrencySymbol string
+	CurrentAmount         string
 	PaymentHistory        []PaymentHistoryItem
+	CurrentPeriodEnd      string
+	LastPaymentAmount     string
+	LastPaymentMethod     string
 }
 
 func ManageSubscription(c *RequestContext) ResponseData {
@@ -52,8 +57,18 @@ func ManageSubscription(c *RequestContext) ResponseData {
 	}
 
 	var history []PaymentHistoryItem
+	currentCurrencySymbol := "$"
+	currentAmount := "5.00"
+
 	if c.CurrentUser != nil && c.CurrentUser.IsSubscribed {
 		payments, _ := db.Query[models.UserPayment](c, c.Conn, "SELECT $columns FROM user_payment WHERE user_id = $1 ORDER BY paid_at DESC", c.CurrentUser.ID)
+		if len(payments) > 0 {
+			if strings.EqualFold(payments[0].Currency, "eur") {
+				currentCurrencySymbol = "€"
+			}
+			currentAmount = fmt.Sprintf("%.2f", float64(payments[0].AmountCents)/100.0)
+		}
+
 		for _, p := range payments {
 			sym := "$"
 			if strings.EqualFold(p.Currency, "eur") {
@@ -77,13 +92,30 @@ func ManageSubscription(c *RequestContext) ResponseData {
 		}
 	}
 
+	currentPeriodEnd := ""
+	if c.CurrentUser != nil && c.CurrentUser.CurrentPeriodEnd != nil {
+		currentPeriodEnd = c.CurrentUser.CurrentPeriodEnd.UTC().Format("Jan 2, 2006")
+	}
+
+	lastAmount := ""
+	lastMethod := ""
+	if len(history) > 0 {
+		lastAmount = history[0].Amount
+		lastMethod = history[0].CardInfo
+	}
+
 	var res ResponseData
 	res.MustWriteTemplate("manage_subscription.html", ManageSubscriptionTemplateData{
 		BaseData:              getBaseData(c, "Manage Subscription", nil),
 		SubscribeUrl:          hmnurl.BuildSubscribe(),
 		CancelSubscriptionUrl: hmnurl.BuildCancelSubscription(),
-		CurrentCurrencySymbol: "$",
+		ResumeSubscriptionUrl: hmnurl.BuildResumeSubscription(),
+		CurrentCurrencySymbol: currentCurrencySymbol,
+		CurrentAmount:         currentAmount,
 		PaymentHistory:        history,
+		CurrentPeriodEnd:      currentPeriodEnd,
+		LastPaymentAmount:     lastAmount,
+		LastPaymentMethod:     lastMethod,
 	}, c.Perf)
 	return res
 }
@@ -113,9 +145,40 @@ func Subscribe(c *RequestContext) ResponseData {
 		},
 	}
 
+	p, err := sc.V1Prices.Retrieve(c, priceID, nil)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to get requested price"))
+	}
+	targetCurrency := p.Currency
+
 	if c.CurrentUser.StripeCustomerID != nil {
 		params.Customer = stripe.String(*c.CurrentUser.StripeCustomerID)
 		params.CustomerEmail = nil
+
+		listParams := &stripe.CheckoutSessionListParams{
+			Customer: stripe.String(*c.CurrentUser.StripeCustomerID),
+			Status:   stripe.String(string(stripe.CheckoutSessionStatusOpen)),
+		}
+
+		iter := sc.V1CheckoutSessions.List(c, listParams)
+		var existingURL string
+		var outdatedSessionID string
+		iter(func(session *stripe.CheckoutSession, err error) bool {
+			if err == nil && session != nil {
+				if session.Currency == targetCurrency {
+					existingURL = session.URL
+				} else {
+					outdatedSessionID = session.ID
+				}
+			}
+			return false // pull only the first item
+		})
+
+		if existingURL != "" {
+			return c.Redirect(existingURL, http.StatusSeeOther)
+		} else if outdatedSessionID != "" {
+			_, _ = sc.V1CheckoutSessions.Expire(c, outdatedSessionID, nil)
+		}
 	}
 
 	s, err := sc.V1CheckoutSessions.Create(c, params)
@@ -127,22 +190,51 @@ func Subscribe(c *RequestContext) ResponseData {
 }
 
 func CancelSubscription(c *RequestContext) ResponseData {
-	if c.CurrentUser.StripeCustomerID == nil {
+	if c.CurrentUser.StripeSubscriptionID == nil {
 		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
 	}
 
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
 
-	params := &stripe.BillingPortalSessionCreateParams{
-		Customer:  stripe.String(*c.CurrentUser.StripeCustomerID),
-		ReturnURL: stripe.String(hmnurl.BuildManageSubscription()),
+	params := &stripe.SubscriptionUpdateParams{
+		CancelAtPeriodEnd: stripe.Bool(true),
 	}
-	ps, err := sc.V1BillingPortalSessions.Create(c, params)
+	_, err := sc.V1Subscriptions.Update(c, *c.CurrentUser.StripeSubscriptionID, params)
 	if err != nil {
-		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to create portal session"))
+		logging.Error().Err(err).Msg("failed to cancel subscription")
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to cancel subscription"))
 	}
 
-	return c.Redirect(ps.URL, http.StatusSeeOther)
+	_, err = c.Conn.Exec(c, "UPDATE hmn_user SET cancel_at_period_end = true WHERE id = $1", c.CurrentUser.ID)
+	if err != nil {
+		logging.Error().Err(err).Msg("failed to update user cancel_at_period_end optimistically")
+	}
+
+	return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+}
+
+func ResumeSubscription(c *RequestContext) ResponseData {
+	if c.CurrentUser.StripeSubscriptionID == nil {
+		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+	}
+
+	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
+
+	params := &stripe.SubscriptionUpdateParams{
+		CancelAtPeriodEnd: stripe.Bool(false),
+	}
+	_, err := sc.V1Subscriptions.Update(c, *c.CurrentUser.StripeSubscriptionID, params)
+	if err != nil {
+		logging.Error().Err(err).Msg("failed to resume subscription")
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to resume subscription"))
+	}
+
+	_, err = c.Conn.Exec(c, "UPDATE hmn_user SET cancel_at_period_end = false WHERE id = $1", c.CurrentUser.ID)
+	if err != nil {
+		logging.Error().Err(err).Msg("failed to update user cancel_at_period_end optimistically")
+	}
+
+	return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
 }
 
 func StripeWebhook(c *RequestContext) ResponseData {
@@ -390,14 +482,18 @@ func handleInvoicePaid(c *RequestContext, sc *stripe.Client, inv *stripe.Invoice
 		logging.Error().Err(err).Int("userID", user.ID).Msg("failed to record user payment")
 	}
 
-	// Update renewal date from invoice period end
-	renewalDate := time.Unix(inv.PeriodEnd, 0)
-	_, err = c.Conn.Exec(c, "UPDATE hmn_user SET current_period_end = $1, is_subscribed = true WHERE id = $2", renewalDate, user.ID)
-	if err != nil {
-		logging.Error().Err(err).Int("userID", user.ID).Msg("failed to update renewal date from invoice")
-	} else {
-		attemptThankYouEmail(c, user.ID, inv.AmountPaid, inv.Currency)
+	if inv.Lines != nil && len(inv.Lines.Data) > 0 && inv.Lines.Data[0].Subscription != nil {
+		sub, err := sc.V1Subscriptions.Retrieve(c, inv.Lines.Data[0].Subscription.ID, nil)
+		if err == nil {
+			renewalDate := getSubscriptionPeriodEnd(sub)
+			_, err = c.Conn.Exec(c, "UPDATE hmn_user SET current_period_end = $1, is_subscribed = true WHERE id = $2", renewalDate, user.ID)
+			if err != nil {
+				logging.Error().Err(err).Int("userID", user.ID).Msg("failed to update renewal date from invoice")
+			}
+		}
 	}
+
+	attemptThankYouEmail(c, user.ID, inv.AmountPaid, inv.Currency)
 }
 
 func handleInvoicePaymentFailed(c *RequestContext, sc *stripe.Client, inv *stripe.Invoice) {

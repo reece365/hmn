@@ -264,7 +264,8 @@ type User struct {
 	IsEduTester bool
 	IsEduAuthor bool
 
-	IsSubscribed bool
+	IsSubscribed      bool
+	CancelAtPeriodEnd bool
 
 	DiscordUser *DiscordUser
 }

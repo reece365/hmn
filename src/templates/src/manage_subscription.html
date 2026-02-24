@@ -12,6 +12,26 @@
 
         {{ template "supporter_card" . }}
 
+        {{ if and .User .User.IsSubscribed }}
+        <div class="bg3 pa4 br2 mv4">
+            <p class="c--dim f6 mb0" style="line-height:1.5;">
+                {{ if .User.CancelAtPeriodEnd }}
+                Your subscription will end at the end of the current billing period on <b>{{ .CurrentPeriodEnd }}</b>.
+                {{ else }}
+                {{ if and .LastPaymentAmount .LastPaymentMethod }}
+                Your payment method on file (<b>{{ .LastPaymentMethod }}</b>) will be automatically charged for <b>{{
+                    .LastPaymentAmount }}</b> on <b>{{ .CurrentPeriodEnd }}</b>.
+                {{ else if .LastPaymentAmount }}
+                Your payment method on file will be automatically charged for <b>{{ .LastPaymentAmount }}</b> on <b>{{
+                    .CurrentPeriodEnd }}</b>.
+                {{ else }}
+                Your payment method on file will be automatically charged on <b>{{ .CurrentPeriodEnd }}</b>.
+                {{ end }}
+                {{ end }}
+            </p>
+        </div>
+        {{ end }}
+
         {{ if .PaymentHistory }}
         <details class="bg3 pa4 br2 mv4">
             <summary class="f4 mt0 mb0 pointer flex justify-between items-center" style="list-style: none;">Payment
@@ -70,6 +90,7 @@
         </li>
     </ul>
     <hr class="mv3 b--white-10">
+
     <div class="flex justify-between items-center">
         <span class="f4 b">
             {{ if (and .User .User.IsSubscribed) }}
@@ -97,17 +118,27 @@
                 </div>
             </span>
             {{ end }}
-            <span id="display-amount">5.00</span>/mo
+            <span id="display-amount">{{ if .CurrentAmount }}{{ .CurrentAmount }}{{ else }}5.00{{ end }}</span>/mo
         </span>
         {{ if .User }}
+        {{ if and .User.IsSubscribed .User.CancelAtPeriodEnd }}
+        <form id="resume-subscription-form" method="POST" action="{{ .ResumeSubscriptionUrl }}">
+            {{ csrftoken .Session }}
+            <button type="submit" class="btn btn-primary">
+                Don't cancel
+            </button>
+        </form>
+        {{ else }}
         <form id="subscribe-form" method="POST"
             action="{{ if .User.IsSubscribed }}{{ .CancelSubscriptionUrl }}{{ else }}{{ .SubscribeUrl }}{{ end }}">
             {{ csrftoken .Session }}
             <input type="hidden" name="price_id" id="price-id-input" value="">
-            <button type="submit" class="btn btn-primary">
-                {{ if .User.IsSubscribed }}Manage or cancel{{ else }}Support Handmade{{ end }}
+            <button type="submit" class="btn btn-primary" {{ if .User.IsSubscribed
+                }}onclick="return confirm('Are you sure you want to cancel your subscription?');" {{ end }}>
+                {{ if .User.IsSubscribed }}Cancel{{ else }}Support Handmade{{ end }}
             </button>
         </form>
+        {{ end }}
         {{ end }}
     </div>
 </div>
