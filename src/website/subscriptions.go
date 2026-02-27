@@ -41,7 +41,7 @@ type ManageSubscriptionTemplateData struct {
 	LastPaymentMethod     string
 }
 
-func ManageSubscription(c *RequestContext) ResponseData {
+func SubscriptionManage(c *RequestContext) ResponseData {
 
 	// If the user just completed checkout, Stripe redirects with a session_id.
 	// Verify it so we can show the correct "subscribed" view even if webhooks
@@ -107,9 +107,9 @@ func ManageSubscription(c *RequestContext) ResponseData {
 	var res ResponseData
 	res.MustWriteTemplate("manage_subscription.html", ManageSubscriptionTemplateData{
 		BaseData:              getBaseData(c, "Manage Subscription", nil),
-		SubscribeUrl:          hmnurl.BuildSubscribe(),
-		CancelSubscriptionUrl: hmnurl.BuildCancelSubscription(),
-		ResumeSubscriptionUrl: hmnurl.BuildResumeSubscription(),
+		SubscribeUrl:          hmnurl.BuildSubscriptionSubscribe(),
+		CancelSubscriptionUrl: hmnurl.BuildSubscriptionCancel(),
+		ResumeSubscriptionUrl: hmnurl.BuildSubscriptionResume(),
 		CurrentCurrencySymbol: currentCurrencySymbol,
 		CurrentAmount:         currentAmount,
 		PaymentHistory:        history,
@@ -120,9 +120,9 @@ func ManageSubscription(c *RequestContext) ResponseData {
 	return res
 }
 
-func Subscribe(c *RequestContext) ResponseData {
+func SubscriptionSubscribe(c *RequestContext) ResponseData {
 	if c.CurrentUser.IsSubscribed {
-		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+		return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 	}
 
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
@@ -134,8 +134,8 @@ func Subscribe(c *RequestContext) ResponseData {
 
 	params := &stripe.CheckoutSessionCreateParams{
 		Mode:              stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL:        stripe.String(hmnurl.BuildManageSubscription() + "?session_id={CHECKOUT_SESSION_ID}"),
-		CancelURL:         stripe.String(hmnurl.BuildManageSubscription()),
+		SuccessURL:        stripe.String(hmnurl.BuildSubscriptionManage() + "?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:         stripe.String(hmnurl.BuildSubscriptionManage()),
 		ClientReferenceID: stripe.String(strconv.Itoa(c.CurrentUser.ID)),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
@@ -200,9 +200,9 @@ func Subscribe(c *RequestContext) ResponseData {
 	return c.Redirect(s.URL, http.StatusSeeOther)
 }
 
-func CancelSubscription(c *RequestContext) ResponseData {
+func SubscriptionCancel(c *RequestContext) ResponseData {
 	if c.CurrentUser.StripeSubscriptionID == nil {
-		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+		return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 	}
 
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
@@ -220,16 +220,16 @@ func CancelSubscription(c *RequestContext) ResponseData {
 		logging.Error().Err(err).Msg("failed to update user cancel_at_period_end optimistically")
 	}
 
-	return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+	return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 }
 
-func ResumeSubscription(c *RequestContext) ResponseData {
+func SubscriptionResume(c *RequestContext) ResponseData {
 	if c.CurrentUser.StripeSubscriptionID == nil {
-		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+		return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 	}
 
 	if c.CurrentUser.CurrentPeriodEnd == nil || c.CurrentUser.CurrentPeriodEnd.Before(time.Now()) {
-		return c.Redirect(hmnurl.BuildSubscribe(), http.StatusSeeOther)
+		return c.Redirect(hmnurl.BuildSubscriptionSubscribe(), http.StatusSeeOther)
 	}
 
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
@@ -247,10 +247,10 @@ func ResumeSubscription(c *RequestContext) ResponseData {
 		logging.Error().Err(err).Msg("failed to update user cancel_at_period_end optimistically")
 	}
 
-	return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+	return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 }
 
-func StripeWebhook(c *RequestContext) ResponseData {
+func SubscriptionWebhook(c *RequestContext) ResponseData {
 	const MaxBodyBytes = int64(65536)
 	payload, err := io.ReadAll(io.LimitReader(c.Req.Body, MaxBodyBytes))
 	if err != nil {

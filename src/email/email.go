@@ -86,7 +86,7 @@ func SendThankYouEmail(
 	contents, err := renderTemplate("email_thank_you.html", ThankYouEmailData{
 		Name:                  toName,
 		HomepageUrl:           hmnurl.BuildHomepage(),
-		ManageSubscriptionUrl: hmnurl.BuildManageSubscription(),
+		ManageSubscriptionUrl: hmnurl.BuildSubscriptionManage(),
 		RenewalDate:           renewalDateStr,
 		Amount:                amount,
 	})
@@ -175,7 +175,7 @@ func SendPaymentFailedEmail(
 	contents, err := renderTemplate("email_payment_failed.html", PaymentFailedEmailData{
 		Name:                  toName,
 		HomepageUrl:           hmnurl.BuildHomepage(),
-		ManageSubscriptionUrl: hmnurl.BuildManageSubscription(),
+		ManageSubscriptionUrl: hmnurl.BuildSubscriptionManage(),
 		Amount:                amount,
 		NextAttemptDate:       nextAttemptDateStr,
 	})

@@ -46,7 +46,7 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 		redirectToHMN,
 	)
 
-	routes.POST(hmnurl.RegexStripeWebhook, StripeWebhook)
+	routes.POST(hmnurl.RegexSubscriptionWebhook, SubscriptionWebhook)
 
 	routes.GET(hmnurl.RegexEsBuild, func(c *RequestContext) ResponseData {
 		if buildcss.ActiveServerPort != 0 {
@@ -199,10 +199,10 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 	hmnOnly.GET(hmnurl.RegexUserSettings, needsAuth(UserSettings))
 	hmnOnly.POST(hmnurl.RegexUserSettings, needsAuth(csrfMiddleware(UserSettingsSave)))
 
-	hmnOnly.GET(hmnurl.RegexManageSubscription, needsAuth(ManageSubscription))
-	hmnOnly.POST(hmnurl.RegexSubscribe, needsAuth(csrfMiddleware(Subscribe)))
-	hmnOnly.POST(hmnurl.RegexCancelSubscription, needsAuth(csrfMiddleware(CancelSubscription)))
-	hmnOnly.POST(hmnurl.RegexResumeSubscription, needsAuth(csrfMiddleware(ResumeSubscription)))
+	hmnOnly.GET(hmnurl.RegexSubscriptionManage, needsAuth(SubscriptionManage))
+	hmnOnly.POST(hmnurl.RegexSubscriptionSubscribe, needsAuth(csrfMiddleware(SubscriptionSubscribe)))
+	hmnOnly.POST(hmnurl.RegexSubscriptionCancel, needsAuth(csrfMiddleware(SubscriptionCancel)))
+	hmnOnly.POST(hmnurl.RegexSubscriptionResume, needsAuth(csrfMiddleware(SubscriptionResume)))
 
 	hmnOnly.GET(hmnurl.RegexPersonalBlog, BlogPersonalIndex)
 	hmnOnly.GET(hmnurl.RegexPersonalBlogThread, BlogPersonalThread)

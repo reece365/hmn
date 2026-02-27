@@ -329,34 +329,34 @@ func BuildUserProfile(username string) string {
 }
 
 var RegexUserSettings = regexp.MustCompile(`^/settings$`)
-var RegexManageSubscription = regexp.MustCompile(`^/manageSubscription$`)
-var RegexSubscribe = regexp.MustCompile(`^/subscribe$`)
-var RegexCancelSubscription = regexp.MustCompile(`^/cancelSubscription$`)
-var RegexResumeSubscription = regexp.MustCompile(`^/resumeSubscription$`)
-var RegexStripeWebhook = regexp.MustCompile(`^/stripeWebhook$`)
+var RegexSubscriptionManage = regexp.MustCompile(`^/foundation/subscription$`)
+var RegexSubscriptionSubscribe = regexp.MustCompile(`^/foundation/subscription/subscribe$`)
+var RegexSubscriptionCancel = regexp.MustCompile(`^/foundation/subscription/cancel$`)
+var RegexSubscriptionResume = regexp.MustCompile(`^/foundation/subscription/resume$`)
+var RegexSubscriptionWebhook = regexp.MustCompile(`^/foundation/subscription/webhook$`)
 
 func BuildUserSettings(section string) string {
 	return UrlWithFragment("/settings", nil, section)
 }
 
-func BuildManageSubscription() string {
-	return Url("/manageSubscription", nil)
+func BuildSubscriptionManage() string {
+	return Url("/foundation/subscription", nil)
 }
 
-func BuildSubscribe() string {
-	return Url("/subscribe", nil)
+func BuildSubscriptionSubscribe() string {
+	return Url("/foundation/subscription/subscribe", nil)
 }
 
-func BuildCancelSubscription() string {
-	return Url("/cancelSubscription", nil)
+func BuildSubscriptionCancel() string {
+	return Url("/foundation/subscription/cancel", nil)
 }
 
-func BuildResumeSubscription() string {
-	return Url("/resumeSubscription", nil)
+func BuildSubscriptionResume() string {
+	return Url("/foundation/subscription/resume", nil)
 }
 
-func BuildStripeWebhook() string {
-	return Url("/stripeWebhook", nil)
+func BuildSubscriptionWebhook() string {
+	return Url("/foundation/subscription/webhook", nil)
 }
 
 /*
