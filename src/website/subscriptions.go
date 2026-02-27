@@ -228,6 +228,10 @@ func ResumeSubscription(c *RequestContext) ResponseData {
 		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
 	}
 
+	if c.CurrentUser.CurrentPeriodEnd == nil || c.CurrentUser.CurrentPeriodEnd.Before(time.Now()) {
+		return c.Redirect(hmnurl.BuildSubscribe(), http.StatusSeeOther)
+	}
+
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
 
 	params := &stripe.SubscriptionUpdateParams{
@@ -648,19 +652,24 @@ func attemptThankYouEmail(c *RequestContext, userID int, amountCents int64, curr
 	// Only send if we have both pieces of info (active status and renewal date) and haven't sent it yet.
 	// We check that the renewal date is at least reasonably in the future to avoid race conditions
 	// where an old or "initiation" date is still in the DB.
+	shouldSend := false
 	if user.IsSubscribed && user.CurrentPeriodEnd != nil && user.CurrentPeriodEnd.After(time.Now().Add(24*time.Hour)) && !user.ThankYouEmailSent {
-		sendThankYouEmail(c, user, user.CurrentPeriodEnd, amountCents, currency)
-
+		shouldSend = true
 		_, err = tx.Exec(c, "UPDATE hmn_user SET thank_you_email_sent = true WHERE id = $1", userID)
 		if err != nil {
 			logging.Error().Err(err).Int("userID", userID).Msg("failed to update thank_you_email_sent flag")
 			return
 		}
+	}
 
-		err = tx.Commit(c)
-		if err != nil {
-			logging.Error().Err(err).Int("userID", userID).Msg("failed to commit transaction for thank you email")
-		}
+	err = tx.Commit(c)
+	if err != nil {
+		logging.Error().Err(err).Int("userID", userID).Msg("failed to commit transaction for thank you email")
+		return
+	}
+
+	if shouldSend {
+		sendThankYouEmail(c, user, user.CurrentPeriodEnd, amountCents, currency)
 	}
 }
 
