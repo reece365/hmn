@@ -5,14 +5,12 @@
     <h2 class="f3 mb4">Manage your subscription</h2>
 
     <div class="mw7">
-        {{ if .User }}
         {{ if .User.IsSubscribed }}
         <p>Thank you for being a supporter! Your recurring donation helps us maintain the site, host events, and
             advocate for better software.</p>
 
         {{ template "supporter_card" . }}
 
-        {{ if and .User .User.IsSubscribed }}
         <div class="bg3 pa4 br2 mv4">
             <p class="c--dim f6 mb0" style="line-height:1.5;">
                 {{ if .User.CancelAtPeriodEnd }}
@@ -30,7 +28,6 @@
                 {{ end }}
             </p>
         </div>
-        {{ end }}
 
         {{ if .PaymentHistory }}
         <details class="bg3 pa4 br2 mv4">
@@ -55,9 +52,6 @@
             focused on our mission. You'll also get some nice perks on our Discord!</p>
 
         {{ template "supporter_card" . }}
-        {{ end }}
-        {{ else }}
-        <p class="mt3">Please <a href="{{ .LoginPageUrl }}">log in</a> to manage your subscription.</p>
         {{ end }}
     </div>
 </div>
@@ -93,7 +87,7 @@
 
     <div class="flex justify-between items-center">
         <span class="f4 b">
-            {{ if (and .User .User.IsSubscribed) }}
+            {{ if .User.IsSubscribed }}
             <span id="display-symbol">{{ .CurrentCurrencySymbol }}</span>
             {{ else }}
             <span id="currency-dropdown-trigger" class="pointer" title="Change currency"
@@ -120,7 +114,6 @@
             {{ end }}
             <span id="display-amount">{{ if .CurrentAmount }}{{ .CurrentAmount }}{{ else }}5.00{{ end }}</span>/mo
         </span>
-        {{ if .User }}
         {{ if and .User.IsSubscribed .User.CancelAtPeriodEnd }}
         <form id="resume-subscription-form" method="POST" action="{{ .ResumeSubscriptionUrl }}">
             {{ csrftoken .Session }}
@@ -138,7 +131,6 @@
                 {{ if .User.IsSubscribed }}Cancel{{ else }}Support Handmade{{ end }}
             </button>
         </form>
-        {{ end }}
         {{ end }}
     </div>
 </div>

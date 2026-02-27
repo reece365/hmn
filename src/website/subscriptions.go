@@ -121,6 +121,10 @@ func ManageSubscription(c *RequestContext) ResponseData {
 }
 
 func Subscribe(c *RequestContext) ResponseData {
+	if c.CurrentUser.IsSubscribed {
+		return c.Redirect(hmnurl.BuildManageSubscription(), http.StatusSeeOther)
+	}
+
 	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
 
 	priceID := c.Req.FormValue("price_id")
@@ -150,6 +154,7 @@ func Subscribe(c *RequestContext) ResponseData {
 		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to get requested price"))
 	}
 	targetCurrency := p.Currency
+	targetAmount := p.UnitAmount
 
 	if c.CurrentUser.StripeCustomerID != nil {
 		params.Customer = stripe.String(*c.CurrentUser.StripeCustomerID)
@@ -163,9 +168,11 @@ func Subscribe(c *RequestContext) ResponseData {
 		iter := sc.V1CheckoutSessions.List(c, listParams)
 		var existingURL string
 		var outdatedSessionID string
+		var listErr error
 		iter(func(session *stripe.CheckoutSession, err error) bool {
+			listErr = err
 			if err == nil && session != nil {
-				if session.Currency == targetCurrency {
+				if session.Currency == targetCurrency && session.AmountTotal == targetAmount {
 					existingURL = session.URL
 				} else {
 					outdatedSessionID = session.ID
@@ -173,6 +180,10 @@ func Subscribe(c *RequestContext) ResponseData {
 			}
 			return false // pull only the first item
 		})
+
+		if listErr != nil {
+			return c.ErrorResponse(http.StatusInternalServerError, oops.New(listErr, "failed to list checkout sessions"))
+		}
 
 		if existingURL != "" {
 			return c.Redirect(existingURL, http.StatusSeeOther)
@@ -201,7 +212,6 @@ func CancelSubscription(c *RequestContext) ResponseData {
 	}
 	_, err := sc.V1Subscriptions.Update(c, *c.CurrentUser.StripeSubscriptionID, params)
 	if err != nil {
-		logging.Error().Err(err).Msg("failed to cancel subscription")
 		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to cancel subscription"))
 	}
 
@@ -225,7 +235,6 @@ func ResumeSubscription(c *RequestContext) ResponseData {
 	}
 	_, err := sc.V1Subscriptions.Update(c, *c.CurrentUser.StripeSubscriptionID, params)
 	if err != nil {
-		logging.Error().Err(err).Msg("failed to resume subscription")
 		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to resume subscription"))
 	}
 

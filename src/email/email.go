@@ -60,10 +60,11 @@ func SendRegistrationEmail(
 }
 
 type ThankYouEmailData struct {
-	Name        string
-	HomepageUrl string
-	RenewalDate string
-	Amount      string
+	Name                  string
+	HomepageUrl           string
+	ManageSubscriptionUrl string
+	RenewalDate           string
+	Amount                string
 }
 
 func SendThankYouEmail(
@@ -83,10 +84,11 @@ func SendThankYouEmail(
 	b1 := perf.StartBlock("EMAIL", "Rendering template")
 	defer b1.End()
 	contents, err := renderTemplate("email_thank_you.html", ThankYouEmailData{
-		Name:        toName,
-		HomepageUrl: hmnurl.BuildHomepage(),
-		RenewalDate: renewalDateStr,
-		Amount:      amount,
+		Name:                  toName,
+		HomepageUrl:           hmnurl.BuildHomepage(),
+		ManageSubscriptionUrl: hmnurl.BuildManageSubscription(),
+		RenewalDate:           renewalDateStr,
+		Amount:                amount,
 	})
 	if err != nil {
 		return err
@@ -95,7 +97,7 @@ func SendThankYouEmail(
 
 	b2 := perf.StartBlock("EMAIL", "Sending email")
 	defer b2.End()
-	err = sendMail(toAddress, toName, "[Handmade Network] Thank you!", contents)
+	err = sendMail(toAddress, toName, "[Handmade Software Foundation] Thank you!", contents)
 	if err != nil {
 		return oops.New(err, "Failed to send email")
 	}
@@ -137,7 +139,7 @@ func SendSubscriptionCancelledEmail(
 
 	b2 := perf.StartBlock("EMAIL", "Sending email")
 	defer b2.End()
-	err = sendMail(toAddress, toName, "[Handmade Network] Subscription cancelled", contents)
+	err = sendMail(toAddress, toName, "[Handmade Software Foundation] Subscription cancelled", contents)
 	if err != nil {
 		return oops.New(err, "Failed to send email")
 	}
@@ -147,10 +149,11 @@ func SendSubscriptionCancelledEmail(
 }
 
 type PaymentFailedEmailData struct {
-	Name            string
-	HomepageUrl     string
-	Amount          string
-	NextAttemptDate string
+	Name                  string
+	HomepageUrl           string
+	ManageSubscriptionUrl string
+	Amount                string
+	NextAttemptDate       string
 }
 
 func SendPaymentFailedEmail(
@@ -170,10 +173,11 @@ func SendPaymentFailedEmail(
 	b1 := perf.StartBlock("EMAIL", "Rendering template")
 	defer b1.End()
 	contents, err := renderTemplate("email_payment_failed.html", PaymentFailedEmailData{
-		Name:            toName,
-		HomepageUrl:     hmnurl.BuildHomepage(),
-		Amount:          amount,
-		NextAttemptDate: nextAttemptDateStr,
+		Name:                  toName,
+		HomepageUrl:           hmnurl.BuildHomepage(),
+		ManageSubscriptionUrl: hmnurl.BuildManageSubscription(),
+		Amount:                amount,
+		NextAttemptDate:       nextAttemptDateStr,
 	})
 	if err != nil {
 		return err
@@ -182,7 +186,7 @@ func SendPaymentFailedEmail(
 
 	b2 := perf.StartBlock("EMAIL", "Sending email")
 	defer b2.End()
-	err = sendMail(toAddress, toName, "[Handmade Network] Payment failed", contents)
+	err = sendMail(toAddress, toName, "[Handmade Software Foundation] Payment failed", contents)
 	if err != nil {
 		return oops.New(err, "Failed to send email")
 	}
