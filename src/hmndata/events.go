@@ -8,6 +8,19 @@ import (
 
 type Event struct {
 	StartTime, EndTime time.Time
+
+	Name        string
+	Description string // NOTE(asaf): Used by opengraph
+	Image       string // NOTE(ben): Used by opengraph
+	Slug        string
+	UrlSlug     string
+
+	IndexUrl         string
+	TicketSuccessUrl string
+	TicketCancelUrl  string
+
+	// Some events have specific template patterns that are disambiguated by this slug.
+	TemplateName string
 }
 
 func (ev Event) Within(t time.Time) bool {
@@ -44,7 +57,7 @@ func CalcTimespans(ev Event, t time.Time) EventTimespans {
 	return timespans
 }
 
-// Conferences
+// Old conferences
 var HMS2022 = Event{
 	StartTime: time.Date(2022, 11, 16, 0, 0, 0, 0, utils.Must1(time.LoadLocation("America/Los_Angeles"))),
 	EndTime:   time.Date(2022, 11, 18, 0, 0, 0, 0, utils.Must1(time.LoadLocation("America/Los_Angeles"))),

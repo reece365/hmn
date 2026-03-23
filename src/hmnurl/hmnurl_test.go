@@ -55,7 +55,7 @@ func TestLoginAction(t *testing.T) {
 }
 
 func TestLoginPage(t *testing.T) {
-	AssertRegexMatch(t, BuildLoginPage(""), RegexLoginPage, nil)
+	AssertRegexMatch(t, BuildLoginPage("", ""), RegexLoginPage, nil)
 }
 
 func TestLoginWithDiscord(t *testing.T) {
@@ -86,11 +86,10 @@ func TestPasswordReset(t *testing.T) {
 
 func TestStaticPages(t *testing.T) {
 	AssertRegexMatch(t, BuildManifesto(), RegexManifesto, nil)
+	AssertRegexMatch(t, BuildValues(), RegexValues, nil)
 	AssertRegexMatch(t, BuildAbout(), RegexAbout, nil)
 	AssertRegexMatch(t, BuildCommunicationGuidelines(), RegexCommunicationGuidelines, nil)
 	AssertRegexMatch(t, BuildContactPage(), RegexContactPage, nil)
-	AssertRegexMatch(t, BuildMonthlyUpdatePolicy(), RegexMonthlyUpdatePolicy, nil)
-	AssertRegexMatch(t, BuildProjectSubmissionGuidelines(), RegexProjectSubmissionGuidelines, nil)
 }
 
 func TestUserProfile(t *testing.T) {

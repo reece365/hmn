@@ -2,13 +2,15 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --color: #000;
-    --link-color: #d12991;
+    --link-color: #9e00ab;
     --c1: #fafafa;
     --c2: #f3f3f3;
     --c3: #dbdbdb;
     --c4: #c1c1c1;
     --c-transparent-background: #fffffff3;
-    --button-color-primary: #ee84ff;
+    --c-transparent-background-lighter: #ffffffb2;
+    --button-color-primary: #d984ff;
+    --button-border-color-primary: #be6fe1;
     --notice-hiatus-color: #aa7d30;
     --notice-dead-color: #b42222;
     --notice-lts-color: #43a52f;
@@ -25,6 +27,7 @@
     --main-background-color-transparent: rgba(#f8f8f8, 0);
     --forum-thread-read-color: #555;
     --forum-thread-read-link-color: #888;
+    --hilbert-color-base: #8ec5b9;
   }
 }
 

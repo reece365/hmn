@@ -37,13 +37,6 @@ type HMNConfig struct {
 	Stripe            StripeConfig
 }
 
-type StripeConfig struct {
-	SecretKey      string
-	PublishableKey string
-	WebhookSecret  string
-	PriceID        string
-}
-
 type PostgresConfig struct {
 	User                 string
 	Password             string
@@ -137,6 +130,13 @@ type EsBuildConfig struct {
 
 type PostmarkConfig struct {
 	TransactionalStreamToken string
+}
+
+type StripeConfig struct {
+	SecretKey      string
+	PublishableKey string
+	WebhookSecret  string
+	PriceID        string
 }
 
 func init() {

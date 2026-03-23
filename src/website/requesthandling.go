@@ -386,6 +386,31 @@ func (c *RequestContext) ErrorResponse(status int, errs ...error) ResponseData {
 	return res
 }
 
+func (c *RequestContext) JSONResponse(status int, data any) ResponseData {
+	res := ResponseData{StatusCode: status}
+	addCORSHeaders(c, &res)
+	res.WriteJson(data, c.Perf)
+	return res
+}
+
+func (c *RequestContext) JSONErrorResponse(status int, errs ...error) ResponseData {
+	defer func() {
+		if r := recover(); r != nil {
+			logContextErrors(c, errs...)
+			panic(r)
+		}
+	}()
+
+	res := ResponseData{
+		StatusCode: status,
+		Errors:     errs,
+	}
+	res.WriteJson(map[string]any{
+		"errors": errs,
+	}, c.Perf)
+	return res
+}
+
 func (c *RequestContext) RejectRequest(reason string) ResponseData {
 	type RejectData struct {
 		templates.BaseData
@@ -444,7 +469,7 @@ func (rd *ResponseData) AddFutureNotice(class string, content string) {
 	rd.FutureNotices = append(rd.FutureNotices, templates.Notice{Class: class, Content: template.HTML(content)})
 }
 
-func (rd *ResponseData) WriteTemplate(name string, data interface{}, rp *perf.RequestPerf) error {
+func (rd *ResponseData) WriteTemplate(name string, data any, rp *perf.RequestPerf) error {
 	if rp != nil {
 		b := rp.StartBlock("TEMPLATE", name)
 		defer b.End()
@@ -456,7 +481,7 @@ func (rd *ResponseData) WriteTemplate(name string, data interface{}, rp *perf.Re
 	return template.Execute(rd, data)
 }
 
-func (rd *ResponseData) MustWriteTemplate(name string, data interface{}, rp *perf.RequestPerf) {
+func (rd *ResponseData) MustWriteTemplate(name string, data any, rp *perf.RequestPerf) {
 	err := rd.WriteTemplate(name, data, rp)
 	if err != nil {
 		panic(err)

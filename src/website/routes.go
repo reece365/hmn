@@ -34,7 +34,7 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 			trackRequestPerf(perfCollector),
 			logContextErrorsMiddleware,
 			preventSearchEngineIndexingOfBeta,
-			panicCatcherMiddleware,
+			panicCatcherMiddleware(false),
 		},
 	}
 
@@ -45,6 +45,7 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 	hmnOnly := anyProject.WithMiddleware(
 		redirectToHMN,
 	)
+	apiRoutes := routes.WithMiddleware(panicCatcherMiddleware(true))
 
 	routes.POST(hmnurl.RegexSubscriptionWebhook, SubscriptionWebhook)
 
@@ -105,13 +106,14 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 
 	// NOTE(asaf): HMN-only routes:
 	hmnOnly.GET(hmnurl.RegexManifesto, Manifesto)
+	hmnOnly.GET(hmnurl.RegexValues, Values)
 	hmnOnly.GET(hmnurl.RegexAbout, About)
 	// hmnOnly.GET(hmnurl.RegexFoundation, Foundation)
 	hmnOnly.GET(hmnurl.RegexCommunicationGuidelines, CommunicationGuidelines)
 	hmnOnly.GET(hmnurl.RegexContactPage, ContactPage)
-	hmnOnly.GET(hmnurl.RegexMonthlyUpdatePolicy, MonthlyUpdatePolicy)
-	hmnOnly.GET(hmnurl.RegexProjectSubmissionGuidelines, ProjectSubmissionGuidelines)
-	hmnOnly.GET(hmnurl.RegexNewsletterSignup, NewsletterSignup)
+	hmnOnly.GET(hmnurl.RegexOldNewsletterSignup, func(c *RequestContext) ResponseData {
+		return c.Redirect(hmnurl.HMNProjectContext.BuildBlog(1), http.StatusFound)
+	})
 
 	hmnOnly.GET(hmnurl.RegexJamsIndex, JamsIndex)
 	hmnOnly.GET(hmnurl.RegexJamIndex, func(c *RequestContext) ResponseData {
@@ -130,12 +132,26 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 	hmnOnly.GET(hmnurl.RegexJamGenericFeed, JamGenericFeed)
 	hmnOnly.GET(hmnurl.RegexJamGenericGuidelines, JamGenericGuidelines)
 
+	hmnOnly.GET(hmnurl.RegexExpo, ExpoIndex)
+	hmnOnly.GET(hmnurl.RegexExpoTicketPurchaseSuccess, needsAuth(ExpoTicketPurchaseSuccess))
+
+	hmnOnly.GET(hmnurl.RegexTicketsAdmin, adminsOnly(TicketsAdmin))
+	hmnOnly.GET(hmnurl.RegexTicketsAdminEvent, adminsOnly(TicketsAdminEvent))
+	hmnOnly.POST(hmnurl.RegexTicketsAdminEvent, adminsOnly(TicketsAdminEventSubmit))
+	hmnOnly.GET(hmnurl.RegexTicketPurchase, needsAuthWithNotice(TicketPurchase, "ticketpurchase"))
+	hmnOnly.GET(hmnurl.RegexTicketQRCode, TicketQRCode)
+	hmnOnly.GET(hmnurl.RegexTicketEdit, needsAuth(TicketEdit))
+	hmnOnly.POST(hmnurl.RegexTicketEdit, needsAuth(csrfMiddleware(TicketEditSubmit)))
+	hmnOnly.GET(hmnurl.RegexTicketDelete, needsAuth(TicketDelete))
+	hmnOnly.POST(hmnurl.RegexTicketDelete, needsAuth(csrfMiddleware(TicketDeleteSubmit)))
+	hmnOnly.GET(hmnurl.RegexTicketScanned, needsAuth(TicketScanned))
+	hmnOnly.GET(hmnurl.RegexTicketSingle, TicketSingle) // Don't put this one first, it likes to capture all the others
+
 	hmnOnly.GET(hmnurl.RegexHSFAbout, HSFAbout)
 	hmnOnly.GET(hmnurl.RegexHSFLanding, HSFLanding)
 	hmnOnly.GET(hmnurl.RegexHSFManifesto, HSFManifesto)
 	hmnOnly.GET(hmnurl.RegexHSFMembership, HSFMembership)
 	hmnOnly.GET(hmnurl.RegexHSFProjects, HSFProjects)
-	hmnOnly.GET(hmnurl.RegexHSFValues, HSFValues)
 
 	hmnOnly.GET(hmnurl.RegexTimeMachine, TimeMachine)
 	hmnOnly.GET(hmnurl.RegexTimeMachineSubmissions, TimeMachineSubmissions)
@@ -235,8 +251,9 @@ func NewWebsiteRoutes(conn *pgxpool.Pool, perfCollector *perf.PerfCollector) htt
 
 	hmnOnly.GET(hmnurl.RegexStyleTest, StyleTest)
 
-	hmnOnly.POST(hmnurl.RegexAPICheckUsername, csrfMiddleware(APICheckUsername))
-	hmnOnly.POST(hmnurl.RegexAPINewsletterSignup, APINewsletterSignup)
+	apiRoutes.POST(hmnurl.RegexAPICheckUsername, csrfMiddleware(APICheckUsername))
+	apiRoutes.POST(hmnurl.RegexAPINewsletterSignup, APINewsletterSignup)
+	apiRoutes.POST(hmnurl.RegexStripeWebhook, StripeWebhook)
 
 	hmnOnly.GET(hmnurl.RegexLibraryAny, func(c *RequestContext) ResponseData {
 		return c.Redirect(hmnurl.BuildEducationIndex(), http.StatusFound)

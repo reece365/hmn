@@ -8,7 +8,7 @@ import (
 func Manifesto(c *RequestContext) ResponseData {
 	type TemplateData struct {
 		templates.BaseData
-		AboutUrl string
+		ValuesUrl string
 	}
 	baseData := getBaseData(c, "Handmade Manifesto", nil)
 	baseData.OpenGraphItems = append(baseData.OpenGraphItems, templates.OpenGraphItem{
@@ -18,6 +18,25 @@ func Manifesto(c *RequestContext) ResponseData {
 
 	var res ResponseData
 	res.MustWriteTemplate("manifesto.html", TemplateData{
+		BaseData:  baseData,
+		ValuesUrl: hmnurl.BuildValues(),
+	}, c.Perf)
+	return res
+}
+
+func Values(c *RequestContext) ResponseData {
+	type TemplateData struct {
+		templates.BaseData
+		AboutUrl string
+	}
+	baseData := getBaseData(c, "Values", nil)
+	baseData.OpenGraphItems = append(baseData.OpenGraphItems, templates.OpenGraphItem{
+		Property: "og:description",
+		Value:    "“What I cannot create, I do not understand.”",
+	})
+
+	var res ResponseData
+	res.MustWriteTemplate("values.html", TemplateData{
 		BaseData: baseData,
 		AboutUrl: hmnurl.BuildAbout(),
 	}, c.Perf)
@@ -45,17 +64,5 @@ func CommunicationGuidelines(c *RequestContext) ResponseData {
 func ContactPage(c *RequestContext) ResponseData {
 	var res ResponseData
 	res.MustWriteTemplate("contact.html", getBaseData(c, "Contact Us", nil), c.Perf)
-	return res
-}
-
-func MonthlyUpdatePolicy(c *RequestContext) ResponseData {
-	var res ResponseData
-	res.MustWriteTemplate("monthly_update_policy.html", getBaseData(c, "Monthly Update Policy", nil), c.Perf)
-	return res
-}
-
-func ProjectSubmissionGuidelines(c *RequestContext) ResponseData {
-	var res ResponseData
-	res.MustWriteTemplate("project_submission_guidelines.html", getBaseData(c, "Project Submission Guidelines", nil), c.Perf)
 	return res
 }

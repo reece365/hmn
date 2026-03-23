@@ -304,6 +304,13 @@ func init() {
 				err = email.SendThankYouEmail(toAddress, toName, nil, "", p)
 			case "cancelled":
 				err = email.SendSubscriptionCancelledEmail(toAddress, toName, nil, p)
+			case "ticketpurchased":
+				err = email.SendExpoTicketPurchaseEmail(toAddress, toName, &models.Ticket{
+					ID:         uuid.New(),
+					EventSlug:  hmndata.HMNExpo2026.Slug,
+					OwnerName:  "Test User",
+					OwnerEmail: "test@example.org",
+				})
 			default:
 				fmt.Printf("You must provide a valid email type\n\n")
 				cmd.Usage()
@@ -697,4 +704,5 @@ func init() {
 	})
 
 	addProjectCommands(adminCommand)
+	addPostCommands(adminCommand)
 }

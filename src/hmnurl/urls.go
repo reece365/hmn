@@ -119,6 +119,80 @@ func BuildJamGenericGuidelines(urlSlug string) string {
 	return Url(fmt.Sprintf("/jam/%s/guidelines", urlSlug), nil)
 }
 
+var RegexExpo = regexp.MustCompile("^/expo/(?P<urlslug>[^/]+)$")
+
+func BuildExpo(urlSlug string, status string) string {
+	defer CatchPanic()
+	var q []Q
+	if status != "" {
+		q = []Q{{"status", status}}
+	}
+	return Url(fmt.Sprintf("/expo/%s", urlSlug), q)
+}
+
+var RegexExpoTicketPurchaseSuccess = regexp.MustCompile("^/expo/(?P<urlslug>[^/]+)/success$")
+
+func BuildExpoTicketPurchaseSuccess(urlSlug string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/expo/%s/success", urlSlug), nil)
+}
+
+var RegexTicketsAdmin = regexp.MustCompile("^/tickets/admin$")
+
+func BuildTicketsAdmin() string {
+	defer CatchPanic()
+	return Url("/tickets/admin", nil)
+}
+
+var RegexTicketsAdminEvent = regexp.MustCompile("^/tickets/admin/(?P<urlslug>[^/]+)$")
+
+func BuildTicketsAdminEvent(urlSlug string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/admin/%s", urlSlug), nil)
+}
+
+var RegexTicketPurchase = regexp.MustCompile("^/tickets/(?P<urlslug>[^/]+)/purchase$")
+
+func BuildTicketPurchase(urlSlug string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s/purchase", urlSlug), nil)
+}
+
+var RegexTicketSingle = regexp.MustCompile("^/tickets/(?P<id>[^/]+)$")
+
+func BuildTicketSingle(id string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s", id), nil)
+}
+
+var RegexTicketQRCode = regexp.MustCompile("^/tickets/(?P<id>[^.]+).png$")
+
+func BuildTicketQRCode(id string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s.png", id), nil)
+}
+
+var RegexTicketEdit = regexp.MustCompile("^/tickets/(?P<id>[^/]+)/edit$")
+
+func BuildTicketEdit(id string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s/edit", id), nil)
+}
+
+var RegexTicketDelete = regexp.MustCompile("^/tickets/(?P<id>[^/]+)/delete$")
+
+func BuildTicketDelete(id string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s/delete", id), nil)
+}
+
+var RegexTicketScanned = regexp.MustCompile("^/tickets/(?P<id>[^/]+)/scanned$")
+
+func BuildTicketScanned(id string) string {
+	defer CatchPanic()
+	return Url(fmt.Sprintf("/tickets/%s/scanned", id), nil)
+}
+
 var RegexTimeMachine = regexp.MustCompile("^/timemachine$")
 
 func BuildTimeMachine() string {
@@ -184,11 +258,14 @@ func BuildLoginAction(redirectTo string) string {
 
 var RegexLoginPage = regexp.MustCompile("^/login$")
 
-func BuildLoginPage(redirectTo string) string {
+func BuildLoginPage(redirectTo string, notice string) string {
 	defer CatchPanic()
 	var q []Q
 	if redirectTo != "" {
 		q = append(q, Q{Name: "redirect", Value: redirectTo})
+	}
+	if notice != "" {
+		q = append(q, Q{Name: "notice", Value: notice})
 	}
 	return Url("/login", q)
 }
@@ -272,6 +349,13 @@ func BuildManifesto() string {
 	return Url("/manifesto", nil)
 }
 
+var RegexValues = regexp.MustCompile("^/values$")
+
+func BuildValues() string {
+	defer CatchPanic()
+	return Url("/values", nil)
+}
+
 var RegexAbout = regexp.MustCompile("^/about$")
 
 func BuildAbout() string {
@@ -293,25 +377,11 @@ func BuildContactPage() string {
 	return Url("/contact", nil)
 }
 
-var RegexNewsletterSignup = regexp.MustCompile("^/newsletter$")
+var RegexOldNewsletterSignup = regexp.MustCompile("^/newsletter$")
 
-func BuildNewsletterSignup() string {
+func BuildOldNewsletterSignup() string {
 	defer CatchPanic()
 	return Url("/newsletter", nil)
-}
-
-var RegexMonthlyUpdatePolicy = regexp.MustCompile("^/monthly-update-policy$")
-
-func BuildMonthlyUpdatePolicy() string {
-	defer CatchPanic()
-	return Url("/monthly-update-policy", nil)
-}
-
-var RegexProjectSubmissionGuidelines = regexp.MustCompile("^/project-guidelines$")
-
-func BuildProjectSubmissionGuidelines() string {
-	defer CatchPanic()
-	return Url("/project-guidelines", nil)
 }
 
 /*
@@ -1008,12 +1078,6 @@ func BuildHSFManifesto() string {
 	return Url("/foundation/manifesto", nil)
 }
 
-var RegexHSFValues = regexp.MustCompile(`^/foundation/values$`)
-
-func BuildHSFValues() string {
-	return Url("/foundation/values", nil)
-}
-
 var RegexHSFProjects = regexp.MustCompile(`^/foundation/projects$`)
 
 func BuildHSFProjects() string {
@@ -1092,8 +1156,8 @@ func BuildPublic(filepath string, cachebust bool) string {
 	}
 	var builder strings.Builder
 	builder.WriteString("/public")
-	pathParts := strings.Split(filepath, "/")
-	for _, part := range pathParts {
+	pathParts := strings.SplitSeq(filepath, "/")
+	for part := range pathParts {
 		part = strings.TrimSpace(part)
 		if len(part) == 0 {
 			panic(oops.New(nil, "Attempted to build a /public url with blank path segments: %s", filepath))
@@ -1125,6 +1189,8 @@ func BuildUserFile(filepath string) string {
 	filepath = strings.Trim(filepath, "/")
 	return BuildPublic(fmt.Sprintf("media/%s", filepath), false)
 }
+
+var RegexStripeWebhook = regexp.MustCompile("^/stripe/webhook$")
 
 /*
 * Redirects
@@ -1257,50 +1323,6 @@ func buildBlogPostPath(threadId int, postId int) *strings.Builder {
 	builder.WriteString(strconv.Itoa(postId))
 
 	return &builder
-}
-
-func buildLibraryResourcePath(resourceId int) *strings.Builder {
-	if resourceId < 1 {
-		panic(oops.New(nil, "Invalid library resource ID (%d), must be >= 1", resourceId))
-	}
-
-	var builder strings.Builder
-	builder.WriteString("/library/resource/")
-	builder.WriteString(strconv.Itoa(resourceId))
-
-	return &builder
-}
-
-func buildLibraryDiscussionPath(resourceId int, threadId int, page int) *strings.Builder {
-	if page < 1 {
-		panic(oops.New(nil, "Invalid page number (%d), must be >= 1", page))
-	}
-	if threadId < 1 {
-		panic(oops.New(nil, "Invalid library thread ID (%d), must be >= 1", threadId))
-	}
-	builder := buildLibraryResourcePath(resourceId)
-	builder.WriteString("/d/")
-	builder.WriteString(strconv.Itoa(threadId))
-	if page > 1 {
-		builder.WriteRune('/')
-		builder.WriteString(strconv.Itoa(page))
-	}
-	return builder
-}
-
-func buildLibraryPostPath(resourceId int, threadId int, postId int) *strings.Builder {
-	if threadId < 1 {
-		panic(oops.New(nil, "Invalid library thread ID (%d), must be >= 1", threadId))
-	}
-	if postId < 1 {
-		panic(oops.New(nil, "Invalid library post ID (%d), must be >= 1", postId))
-	}
-	builder := buildLibraryResourcePath(resourceId)
-	builder.WriteString("/d/")
-	builder.WriteString(strconv.Itoa(threadId))
-	builder.WriteString("/p/")
-	builder.WriteString(strconv.Itoa(postId))
-	return builder
 }
 
 var PathCharsToClear = regexp.MustCompile("[$&`<>{}()\\[\\]\"+#%@;=?\\\\^|~‘]")

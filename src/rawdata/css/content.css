@@ -11,24 +11,26 @@
     }
   }
 
-  h1 {
-    font-size: 2rem;
-  }
+  &:not(.post-preview) {
+    h1 {
+      font-size: 2rem;
+    }
 
-  h2 {
-    font-size: 1.5rem;
-  }
+    h2 {
+      font-size: 1.5rem;
+    }
 
-  h3 {
-    font-size: 1.25rem;
-  }
+    h3 {
+      font-size: 1.25rem;
+    }
 
-  h4 {
-    font-size: 1rem;
-  }
+    h4 {
+      font-size: 1rem;
+    }
 
-  h5 {
-    font-size: 0.8rem;
+    h5 {
+      font-size: 0.8rem;
+    }
   }
 
   h1,
@@ -37,7 +39,7 @@
   h4,
   h5 {
     line-height: 1.2;
-    margin-top: 0.5em;
+    margin-top: 1.5em;
     margin-bottom: 0.5em;
   }
 

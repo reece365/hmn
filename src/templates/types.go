@@ -51,13 +51,14 @@ type Header struct {
 	HMNHomepageUrl  string
 	ProjectIndexUrl string
 	PodcastUrl      string
-	NewsletterUrl   string
+	NewsUrl         string
 	FishbowlUrl     string
 	ForumsUrl       string
 	JamsUrl         string
 	EducationUrl    string
 	CalendarUrl     string
 	ManifestoUrl    string
+	ValuesUrl       string
 	AboutUrl        string
 
 	Project *ProjectHeader
@@ -111,7 +112,8 @@ type HSFBaseData struct {
 }
 
 type Thread struct {
-	Title string
+	Title   string
+	Hilbert Hilbert
 
 	Locked bool
 	Sticky bool
@@ -126,6 +128,7 @@ type Post struct {
 	ReplyUrl  string
 
 	Preview      string
+	PreviewHTML  template.HTML
 	ReadOnly     bool
 	ThreadLocked bool
 
@@ -151,6 +154,7 @@ type BlogIndexEntry struct {
 	Author  User
 	Date    time.Time
 	Content template.HTML
+	Hilbert Hilbert
 }
 
 type Project struct {
@@ -204,6 +208,10 @@ type ProjectSettings struct {
 
 type Flowsnake struct {
 	Angle, Hue, Size int
+}
+
+type Hilbert struct {
+	Hue int
 }
 
 const FlowsnakeMaxAngle = 25    // deg
@@ -506,4 +514,18 @@ type CalendarEvent struct {
 	StartTime time.Time
 	EndTime   time.Time
 	CalName   string
+}
+
+type Ticket struct {
+	ID            string
+	OwnerName     string
+	OwnerEmail    string
+	OwnerUsername string
+	PurchaseDate  time.Time
+	Notes         string
+
+	Url       string
+	DeleteUrl string
+
+	OwnerProfileUrl string
 }

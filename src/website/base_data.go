@@ -60,7 +60,7 @@ func getBaseData(c *RequestContext, title string, breadcrumbs []templates.Breadc
 
 		CurrentUrl:          c.FullUrl(),
 		CurrentProjectUrl:   c.UrlContext.BuildHomepage(),
-		LoginPageUrl:        hmnurl.BuildLoginPage(c.FullUrl()),
+		LoginPageUrl:        hmnurl.BuildLoginPage(c.FullUrl(), ""),
 		DiscordInviteUrl:    "https://discord.gg/hmn",
 		NewsletterSignupUrl: hmnurl.BuildAPINewsletterSignup(),
 
@@ -84,13 +84,14 @@ func getBaseData(c *RequestContext, title string, breadcrumbs []templates.Breadc
 			HMNHomepageUrl:  hmnurl.BuildHomepage(),
 			ProjectIndexUrl: hmnurl.BuildProjectIndex(),
 			PodcastUrl:      hmnurl.BuildPodcast(),
-			NewsletterUrl:   hmnurl.BuildNewsletterSignup(),
+			NewsUrl:         hmnurl.HMNProjectContext.BuildBlog(1),
 			FishbowlUrl:     hmnurl.BuildFishbowlIndex(),
 			ForumsUrl:       hmnurl.HMNProjectContext.BuildForum(nil, 1),
 			JamsUrl:         hmnurl.BuildJamsIndex(),
 			EducationUrl:    hmnurl.BuildEducationIndex(),
 			CalendarUrl:     hmnurl.BuildCalendarIndex(),
 			ManifestoUrl:    hmnurl.BuildManifesto(),
+			ValuesUrl:       hmnurl.BuildValues(),
 			AboutUrl:        hmnurl.BuildAbout(),
 
 			Breadcrumbs: breadcrumbs,
@@ -164,7 +165,7 @@ func getHSFBaseData() templates.HSFBaseData {
 
 	baseData.HomeUrl = hmnurl.BuildHSFLanding()
 	baseData.ManifestoUrl = hmnurl.BuildHSFManifesto()
-	baseData.ValuesUrl = hmnurl.BuildHSFValues()
+	baseData.ValuesUrl = hmnurl.BuildValues()
 	baseData.ProjectsUrl = hmnurl.BuildHSFProjects()
 	baseData.AboutUrl = hmnurl.BuildHSFAbout()
 	baseData.MembershipUrl = hmnurl.BuildHSFMembership()

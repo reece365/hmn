@@ -1,6 +1,6 @@
 module git.handmade.network/hmn/hmn
 
-go 1.22
+go 1.25
 
 require (
 	github.com/HandmadeNetwork/golorem v0.0.0-20220507185207-414965a3a817
@@ -21,9 +21,10 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/rs/zerolog v1.28.0
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.8.1
-	github.com/stripe/stripe-go/v84 v84.3.0
+	github.com/stripe/stripe-go/v84 v84.4.1
 	github.com/tcolgate/mp3 v0.0.0-20170426193717-e79c5a46d300
 	github.com/teacat/noire v1.1.0
 	github.com/yuin/goldmark v1.4.13

@@ -1,0 +1,657 @@
+package website
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"git.handmade.network/hmn/hmn/src/db"
+	"git.handmade.network/hmn/hmn/src/email"
+	"git.handmade.network/hmn/hmn/src/hmndata"
+	"git.handmade.network/hmn/hmn/src/hmnurl"
+	"git.handmade.network/hmn/hmn/src/logging"
+	"git.handmade.network/hmn/hmn/src/models"
+	"git.handmade.network/hmn/hmn/src/oops"
+	"git.handmade.network/hmn/hmn/src/templates"
+	"git.handmade.network/hmn/hmn/src/utils"
+	"github.com/google/uuid"
+	"github.com/skip2/go-qrcode"
+	"github.com/stripe/stripe-go/v84"
+	"github.com/stripe/stripe-go/v84/checkout/session"
+	"github.com/stripe/stripe-go/v84/price"
+)
+
+const TicketPendingExpiration = time.Minute * 31 // Stripe sets the minimum at 30 and I am paranoid about errors
+
+type TicketPageCommon struct {
+	TicketDescriptor string
+}
+
+var ticketPageTitles = [...]string{"Dominator", "Punisher", "Crusher", "Smasher", "Pulverizer", "Overlord", "Apocalypse"}
+
+func getCommonTicketPageData() TicketPageCommon {
+	return TicketPageCommon{
+		TicketDescriptor: ticketPageTitles[rand.Intn(len(ticketPageTitles))],
+	}
+}
+
+type TicketsAdminEventTemplateData struct {
+	Event    hmndata.Event
+	Metadata TicketMetadataForEvent
+	Tickets  []templates.Ticket
+	Url      string
+}
+
+func TicketsAdmin(c *RequestContext) ResponseData {
+	type TicketsTemplateData struct {
+		templates.BaseData
+		TicketPageCommon
+		TicketEvents []TicketsAdminEventTemplateData
+	}
+	data := TicketsTemplateData{
+		BaseData:         getBaseData(c, "Admin ticket dashboard", nil),
+		TicketPageCommon: getCommonTicketPageData(),
+	}
+	for _, e := range hmndata.AllTicketEvents {
+		metadata, err := fetchTicketMetadataForEvent(c, c.Conn, &e)
+		if err != nil {
+			return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to fetch ticket metadata"))
+		}
+		data.TicketEvents = append(data.TicketEvents, TicketsAdminEventTemplateData{
+			Event:    e,
+			Metadata: metadata,
+			Url:      hmnurl.BuildTicketsAdminEvent(e.UrlSlug),
+		})
+	}
+
+	var res ResponseData
+	res.MustWriteTemplate("tickets_admin.html", data, c.Perf)
+	return res
+}
+
+func TicketsAdminEvent(c *RequestContext) ResponseData {
+	type TicketsEventTemplateData struct {
+		templates.BaseData
+		TicketPageCommon
+		TicketsEvent TicketsAdminEventTemplateData
+	}
+	urlSlug := c.PathParams["urlslug"]
+
+	event, found := hmndata.FindTicketEventBySlug(urlSlug)
+	if !found {
+		return FourOhFour(c)
+	}
+
+	metadata, err := fetchTicketMetadataForEvent(c, c.Conn, &event)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to fetch ticket metadata"))
+	}
+
+	rawTickets, err := hmndata.FetchTickets(c, c.Conn, &event)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to fetch tickets"))
+	}
+	var tickets []templates.Ticket
+	for _, t := range rawTickets {
+		tickets = append(tickets, templates.TicketToTemplate(&t))
+	}
+
+	data := TicketsEventTemplateData{
+		BaseData:         getBaseData(c, fmt.Sprintf("Admin ticket dashboard - %s", event.Name), nil),
+		TicketPageCommon: getCommonTicketPageData(),
+		TicketsEvent: TicketsAdminEventTemplateData{
+			Event:    event,
+			Metadata: metadata,
+			Url:      hmnurl.BuildTicketsAdminEvent(event.UrlSlug),
+			Tickets:  tickets,
+		},
+	}
+
+	var res ResponseData
+	res.MustWriteTemplate("tickets_admin_event.html", data, c.Perf)
+	return res
+}
+
+func TicketsAdminEventSubmit(c *RequestContext) ResponseData {
+	err := c.Req.ParseForm()
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "Failed to parse tickets admin form"))
+	}
+
+	eventUrlSlug := c.PathParams["urlslug"]
+	event, found := hmndata.FindTicketEventBySlug(eventUrlSlug)
+	if !found {
+		return FourOhFour(c)
+	}
+
+	maxTicketsStr := c.Req.Form.Get("max_tickets")
+	maxReservedTicketsStr := c.Req.Form.Get("max_reserved_tickets")
+	presale := c.Req.Form.Get("presale") != ""
+	priceID := c.Req.Form.Get("price_id")
+
+	price, err := price.Get(priceID, &stripe.PriceParams{})
+	if err != nil {
+		c.Logger.Error().Err(err).Msg("Failed to retrieve Stripe price")
+		return c.RejectRequest("Could not load price info from Stripe")
+	}
+
+	maxTickets, err := strconv.Atoi(maxTicketsStr)
+	if err != nil {
+		return c.RejectRequest("Max tickets must be a number")
+	}
+	maxReservedTickets, err := strconv.Atoi(maxReservedTicketsStr)
+	if err != nil {
+		return c.RejectRequest("Max reserved tickets must be a number")
+	}
+
+	_, err = c.Conn.Exec(c,
+		`
+		INSERT INTO ticket_metadata
+		(slug, max_tickets, max_reserved, presale, stripe_price_id, stripe_price_amount, stripe_price_currency)
+		VALUES
+		($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (slug) DO UPDATE SET
+			max_tickets = EXCLUDED.max_tickets,
+			max_reserved = EXCLUDED.max_reserved,
+			presale = EXCLUDED.presale,
+			stripe_price_id = EXCLUDED.stripe_price_id,
+			stripe_price_amount = EXCLUDED.stripe_price_amount,
+			stripe_price_currency = EXCLUDED.stripe_price_currency
+		`,
+		event.Slug, maxTickets, maxReservedTickets, presale, price.ID, price.UnitAmount, price.Currency,
+	)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "Failed to update event ticket metadata"))
+	}
+
+	return c.Redirect(hmnurl.BuildTicketsAdminEvent(eventUrlSlug), http.StatusSeeOther)
+}
+
+// A generic handler that takes an event slug and initiates a Stripe transaction for it. Will
+// redirect the user to Stripe, which will then redirect the user back to the configured URL, which
+// is expected to be event-specific.
+//
+// Because tickets are a limited-quantity thing, and we want to avoid issuing refunds, we first
+// create a pending ticket in the DB (atomically!), then create a Stripe checkout session, which in
+// turn creates a Stripe PaymentIntent (which tracks a specific payment attempt). We save the ID of
+// the PaymentIntent to the pending ticket before sending the user off to the checkout form; that
+// way, if wacky stuff happens with the payment, we can associate it precisely with the specific
+// ticket attempt even if events come in late.
+func TicketPurchase(c *RequestContext) ResponseData {
+	urlSlug := c.PathParams["urlslug"]
+	event, found := hmndata.FindTicketEventBySlug(urlSlug)
+	if !found {
+		return FourOhFour(c)
+	}
+
+	if time.Now().After(event.StartTime) {
+		return c.RejectRequest("We're no longer selling tickets for this event.")
+	}
+
+	var pendingTicketID *uuid.UUID
+	var metadata TicketMetadataForEvent
+	tx, err := c.Conn.Begin(c)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to start transaction"))
+	}
+	defer tx.Rollback(c)
+	{
+		// Check if the user already has a ticket
+		existingTicket, err := hmndata.FetchTicket(c, tx, hmndata.TicketQuery{
+			EventSlug: event.Slug,
+			UserID:    c.CurrentUser.ID,
+		})
+		if err == db.NotFound {
+			// Good, they do not yet have a ticket
+		} else if err != nil {
+			return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to check for existing ticket"))
+		} else {
+			if existingTicket.Pending {
+				// This is a weird case where they must have started a new ticket-purchase flow without
+				// completing a previous one. In this case we should have a checkout session ID whose URL
+				// we can retrieve and send the user to.
+				if existingTicket.StripeCheckoutSessionID == "" {
+					return c.RejectRequest("You already started purchasing a ticket, but we couldn't redirect you to your existing payment flow.")
+				}
+				if sess, err := session.Get(existingTicket.StripeCheckoutSessionID, &stripe.CheckoutSessionParams{}); err == nil {
+					if sess.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
+						return c.RejectRequest("Your ticket is paid for, but something is messed up in our system. Please contact us and we'll sort it out.")
+					}
+					return c.Redirect(sess.URL, http.StatusSeeOther)
+				} else {
+					// If somehow their checkout session didn't exist, then perhaps it's a race condition
+					// with Stripe about their session expiring. Just reject the request.
+					return c.RejectRequest("Failed to look up your previous checkout session. Please contact us.")
+				}
+			} else {
+				return c.RejectRequest("You already have a ticket for this event.")
+			}
+		}
+
+		// Check if there are any tickets remaining
+		metadata, err = fetchTicketMetadataForEvent(c, tx, &event)
+		if err != nil {
+			return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to fetch event ticket metadata"))
+		}
+		if metadata.RemainingTicketsForSale() <= 0 {
+			return c.RejectRequest("We've run out of tickets for this event.")
+		}
+
+		// ...and check if we've even configured the event correctly.
+		if metadata.StripePriceID == "" {
+			return c.RejectRequest("The event has not been configured with Stripe yet. This is the admins' fault.")
+		}
+
+		// Create a pending ticket for this user (with no checkout session ID yet; we will fill that in
+		// later after the transaction succeeds).
+		pendingTicketID, err = db.QueryOne[uuid.UUID](c, tx,
+			`
+			INSERT INTO ticket (id, event_slug, pending, user_id, name, email)
+			VALUES ($1, $2, TRUE, $3, $4, $5)
+			RETURNING id
+			`,
+			uuid.New(), event.Slug, c.CurrentUser.ID, c.CurrentUser.BestName(), c.CurrentUser.Email,
+		)
+	}
+	err = tx.Commit(c)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to create pending ticket"))
+	}
+	utils.Assert(pendingTicketID)
+
+	// Defer a delete of the pending ticket in case things go wrong.
+	deletePendingTicket := true
+	defer func() {
+		if deletePendingTicket {
+			_, err := c.Conn.Exec(c, `DELETE FROM ticket WHERE id = $1`, *pendingTicketID)
+			if err != nil {
+				c.Logger.Error().Err(err).Msg("Failed to clean up bad pending ticket")
+			}
+		}
+	}()
+
+	// Create a Stripe checkout session
+	params := &stripe.CheckoutSessionParams{
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(metadata.StripePriceID),
+				Quantity: stripe.Int64(1),
+			},
+		},
+
+		// We use the ticket ID as the client reference ID. However, the expected logic is to look up
+		// the pending ticket using the CheckoutSession ID, then assert that the ticket ID matches the
+		// client reference ID for sanity.
+		ClientReferenceID: stripe.String(pendingTicketID.String()),
+		CustomerEmail:     stripe.String(c.CurrentUser.Email),
+
+		// We don't allow bank payments for ticket purchases due to the long transaction time.
+		ExcludedPaymentMethodTypes: []*string{stripe.String("us_bank_account")},
+
+		// We use Stripe's checkout session expirations to drive the cancellation of pending tickets.
+		// On checkout session expiration, if the associated ticket is pending, we delete it. This
+		// saves us from running yet another background job.
+		ExpiresAt: stripe.Int64(time.Now().Add(TicketPendingExpiration).Unix()),
+
+		SuccessURL: stripe.String(event.TicketSuccessUrl),
+		CancelURL:  stripe.String(event.TicketCancelUrl),
+	}
+	result, err := session.New(params)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to create Stripe checkout session"))
+	}
+
+	// Save the checkout session's PaymentIntent ID to the pending ticket before we send the user off
+	// to Stripe.
+	_, err = c.Conn.Exec(c,
+		`
+		UPDATE ticket SET stripe_cs_id = $2
+		WHERE id = $1
+		`,
+		*pendingTicketID, result.ID,
+	)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to save checkout session ID on pending ticket"))
+	}
+
+	// Finally the user can go pay.
+	deletePendingTicket = false
+	return c.Redirect(result.URL, http.StatusSeeOther)
+}
+
+func confirmStripeTicketPurchase(ctx context.Context, conn db.ConnOrTx, session *stripe.CheckoutSession, ticket *models.Ticket) error {
+	// Sanity checks!
+	{
+		if ticket.ID.String() != session.ClientReferenceID {
+			return oops.New(nil, "SANITY CHECK FAILED: ticket ID and client reference ID mismatch ('%s' vs. '%s')", ticket.ID.String(), session.ClientReferenceID)
+		}
+		if ticket.StripeCheckoutSessionID != session.ID {
+			return oops.New(nil, "SANITY CHECK FAILED: ticket references other checkout session ('%s' vs. '%s')", ticket.StripeCheckoutSessionID, session.ID)
+		}
+	}
+
+	_, err := conn.Exec(ctx,
+		`
+		UPDATE ticket SET pending = FALSE, stripe_pi_id = $2, stripe_price_amount = $3, stripe_price_currency = $4
+		WHERE id = $1
+		`,
+		ticket.ID, session.PaymentIntent.ID, fmt.Sprintf("%d", session.AmountTotal), session.Currency,
+	)
+	if err != nil {
+		return oops.New(err, "failed to update ticket after payment")
+	}
+
+	// NOTE(ben): This is hardcoded to expos right now. This has some ramifications for template
+	// names and so on.
+	err = email.SendExpoTicketPurchaseEmail(ticket.OwnerEmail, ticket.OwnerName, ticket)
+	if err != nil {
+		return oops.New(err, "failed to send ticket email")
+	}
+
+	return nil
+}
+
+func cancelPendingTicketsForCheckoutSession(ctx context.Context, conn db.ConnOrTx, session *stripe.CheckoutSession) (int64, error) {
+	logger := logging.ExtractLogger(ctx).With().Str("sessionID", session.ID).Logger()
+
+	foo, err := conn.Exec(ctx,
+		`
+		DELETE FROM ticket
+		WHERE stripe_cs_id = $1 AND pending = TRUE
+		`,
+		session.ID,
+	)
+	if err != nil {
+		return 0, oops.New(err, "failed to delete tickets for checkout session")
+	}
+
+	if foo.RowsAffected() > 1 {
+		logger.Warn().Int64("RowsAffected", foo.RowsAffected()).Msg("had multiple tickets for a single checkout session; this should not be possible")
+	}
+
+	return foo.RowsAffected(), nil
+}
+
+type TicketMetadataForEvent struct {
+	models.TicketMetadata
+
+	SoldTickets     int
+	ReservedTickets int
+}
+
+func (metadata *TicketMetadataForEvent) RemainingTicketsForSale() int {
+	reserved := utils.Max(metadata.MaxReserved, metadata.ReservedTickets)
+	remaining := metadata.MaxTickets - reserved - metadata.SoldTickets
+	return remaining
+}
+
+func fetchTicketMetadataForEvent(ctx context.Context, conn db.ConnOrTx, event *hmndata.Event) (TicketMetadataForEvent, error) {
+	metadata, err := db.QueryOne[models.TicketMetadata](ctx, conn,
+		`
+		SELECT $columns
+		FROM ticket_metadata
+		WHERE slug = $1
+		`,
+		event.Slug,
+	)
+	if err == db.NotFound {
+		// Return a default event, suitable for editing
+		return TicketMetadataForEvent{
+			TicketMetadata: models.TicketMetadata{
+				EventSlug: event.Slug,
+			},
+		}, nil
+	} else if err != nil {
+		return TicketMetadataForEvent{}, oops.New(err, "failed to fetch ticket metadata")
+	}
+	utils.Assert(metadata)
+
+	type ticketAllocations struct {
+		SoldTickets     int `db:"COUNT(*) FILTER (WHERE reserved = FALSE) AS sold_tickets"`
+		ReservedTickets int `db:"COUNT(*) FILTER (WHERE reserved = TRUE) AS reserved_tickets"`
+	}
+	allocs, err := db.QueryOne[ticketAllocations](ctx, conn,
+		`
+		SELECT $columns
+		FROM ticket
+		WHERE event_slug = $1
+		`,
+		event.Slug,
+	)
+	if err != nil {
+		return TicketMetadataForEvent{}, oops.New(err, "failed to fetch ticket allocations")
+	}
+
+	return TicketMetadataForEvent{
+		TicketMetadata:  *metadata,
+		SoldTickets:     allocs.SoldTickets,
+		ReservedTickets: allocs.ReservedTickets,
+	}, nil
+}
+
+func TicketSingle(c *RequestContext) ResponseData {
+	ticket, err := hmndata.FetchTicket(c, c.Conn, hmndata.TicketQuery{
+		ID: c.PathParams["id"],
+	})
+	if err == db.NotFound {
+		return FourOhFour(c)
+	} else if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to look up ticket for scanning"))
+	}
+
+	event, ok := hmndata.FindTicketEventBySlug(ticket.EventSlug)
+	if !ok {
+		c.Logger.Error().
+			Str("ticketID", ticket.ID.String()).
+			Str("eventSlug", ticket.EventSlug).
+			Msg("Ticket event slug was invalid!")
+		return c.RejectRequest("Your ticket is not associated with a valid event. This is our fault. Sorry.")
+	}
+
+	type TemplateData struct {
+		templates.BaseData
+		Ticket           templates.Ticket
+		TicketCodeURL    string
+		TicketEditURL    string
+		EventName        string
+		EventDescription string
+		EventURL         string
+	}
+	tmpl := TemplateData{
+		BaseData:         getBaseData(c, fmt.Sprintf("%s Ticket", event.Name), nil),
+		Ticket:           templates.TicketToTemplate(ticket),
+		TicketCodeURL:    hmnurl.BuildTicketQRCode(ticket.ID.String()),
+		TicketEditURL:    hmnurl.BuildTicketEdit(ticket.ID.String()),
+		EventName:        event.Name,
+		EventDescription: event.Description,
+		EventURL:         event.IndexUrl,
+	}
+
+	// TODO(ben): We really ought to have the event slug be expo_2026, not just a single year, but
+	// this is not a change I am making at this point.
+	templateName := fmt.Sprintf("expo_%s_ticket.html", event.TemplateName)
+
+	var res ResponseData
+	res.MustWriteTemplate(templateName, tmpl, c.Perf)
+	return res
+}
+
+func TicketQRCode(c *RequestContext) ResponseData {
+	const baseWidth = 256
+	scale, _ := strconv.Atoi(utils.OrDefault(c.URL().Query().Get("scale"), "1"))
+	scale = max(1, min(4, scale))
+
+	// NOTE(ben): We don't even bother to do a db lookup here. If someone provides a bad ticket ID,
+	// our scanner will just reject it.
+	codePNG := utils.Must1(qrcode.Encode(hmnurl.BuildTicketScanned(c.PathParams["id"]), qrcode.Medium, baseWidth*scale))
+
+	var res ResponseData
+	res.Header().Add("Content-Type", "image/png")
+	res.Write(codePNG)
+	return res
+}
+
+func TicketEdit(c *RequestContext) ResponseData {
+	ticket, err := hmndata.FetchTicket(c, c.Conn, hmndata.TicketQuery{
+		ID: c.PathParams["id"],
+	})
+	if err == db.NotFound {
+		return FourOhFour(c)
+	} else if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to look up ticket for editing"))
+	}
+
+	if !canEditTicket(c.CurrentUser, ticket) {
+		return FourOhFour(c)
+	}
+
+	type TemplateData struct {
+		templates.BaseData
+		Ticket    templates.Ticket
+		SubmitURL string
+	}
+
+	var res ResponseData
+	res.MustWriteTemplate("tickets_single_edit.html", TemplateData{
+		BaseData:  getBaseData(c, "Edit Ticket", nil),
+		Ticket:    templates.TicketToTemplate(ticket),
+		SubmitURL: hmnurl.BuildTicketEdit(ticket.ID.String()),
+	}, c.Perf)
+	return res
+}
+
+func TicketEditSubmit(c *RequestContext) ResponseData {
+	ticket, err := hmndata.FetchTicket(c, c.Conn, hmndata.TicketQuery{
+		ID: c.PathParams["id"],
+	})
+	if err == db.NotFound {
+		return FourOhFour(c)
+	} else if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to look up ticket"))
+	}
+
+	if !canEditTicket(c.CurrentUser, ticket) {
+		return FourOhFour(c)
+	}
+
+	err = c.Req.ParseForm()
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to parse ticket edit form"))
+	}
+
+	newName := c.Req.Form.Get("name")
+	newEmail := c.Req.Form.Get("email")
+
+	// Trim to reasonable length
+	newName = newName[:min(len(newName), 500)]
+	newEmail = newEmail[:min(len(newEmail), 500)]
+
+	_, err = c.Conn.Exec(c,
+		`
+		UPDATE ticket SET name = $1, email = $2
+		WHERE id = $3
+		`,
+		newName, newEmail,
+		ticket.ID,
+	)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "Failed to update ticket"))
+	}
+
+	return c.Redirect(hmnurl.BuildTicketSingle(ticket.ID.String()), http.StatusSeeOther)
+}
+
+func TicketDelete(c *RequestContext) ResponseData {
+	if !canDeleteTicket(c.CurrentUser) {
+		return FourOhFour(c)
+	}
+
+	ticket, err := hmndata.FetchTicket(c, c.Conn, hmndata.TicketQuery{
+		ID: c.PathParams["id"],
+	})
+	if err == db.NotFound {
+		return FourOhFour(c)
+	} else if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to look up ticket for deleting"))
+	}
+
+	type TemplateData struct {
+		templates.BaseData
+		Ticket    templates.Ticket
+		SubmitURL string
+	}
+
+	var res ResponseData
+	res.MustWriteTemplate("tickets_single_delete.html", TemplateData{
+		BaseData:  getBaseData(c, "Delete Ticket", nil),
+		Ticket:    templates.TicketToTemplate(ticket),
+		SubmitURL: hmnurl.BuildTicketDelete(ticket.ID.String()),
+	}, c.Perf)
+	return res
+}
+
+func TicketDeleteSubmit(c *RequestContext) ResponseData {
+	if !canDeleteTicket(c.CurrentUser) {
+		return FourOhFour(c)
+	}
+
+	ticket, err := hmndata.FetchTicket(c, c.Conn, hmndata.TicketQuery{
+		ID: c.PathParams["id"],
+	})
+	if err == db.NotFound {
+		return FourOhFour(c)
+	} else if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to look up ticket"))
+	}
+	event, ok := hmndata.FindTicketEventBySlug(ticket.EventSlug)
+	if !ok {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(nil, "no event found with slug %s", ticket.EventSlug))
+	}
+
+	err = c.Req.ParseForm()
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "failed to parse ticket delete form"))
+	}
+
+	confirmation := c.Req.Form.Get("confirmation")
+	if !strings.EqualFold(ticket.OwnerEmail, confirmation) {
+		return c.RejectRequest("The provided email address did not match the ticket.")
+	}
+
+	res, err := c.Conn.Exec(c,
+		`DELETE FROM ticket WHERE id = $1`,
+		ticket.ID,
+	)
+	if err != nil {
+		return c.ErrorResponse(http.StatusInternalServerError, oops.New(err, "Failed to update ticket"))
+	}
+	utils.Assert(res.RowsAffected() == 1, "expected to delete 1 ticket, but somehow deleted", res.RowsAffected())
+
+	return c.Redirect(hmnurl.BuildTicketsAdminEvent(event.UrlSlug), http.StatusSeeOther)
+}
+
+func TicketScanned(c *RequestContext) ResponseData {
+	if !c.CurrentUser.IsStaff {
+		c.Redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ", http.StatusSeeOther)
+	}
+
+	// TODO(ben): Actually build ticket-scanning logic closer to the time of the event.
+	return ResponseData{}
+}
+
+func canEditTicket(user *models.User, ticket *models.Ticket) bool {
+	if user.IsStaff {
+		return true
+	}
+
+	return ticket.OwnerUserID != nil && user.ID == *ticket.OwnerUserID
+}
+
+func canDeleteTicket(user *models.User) bool {
+	return user.IsStaff
+}

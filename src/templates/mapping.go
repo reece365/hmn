@@ -22,8 +22,9 @@ func PostToTemplate(p *models.Post, author *models.User) Post {
 
 		// Urls not set here. They vary per thread type. Set 'em yourself!
 
-		Preview:  p.Preview,
-		ReadOnly: p.ReadOnly,
+		Preview:     p.PreviewPlaintext,
+		PreviewHTML: template.HTML(p.PreviewHTML),
+		ReadOnly:    p.ReadOnly,
 
 		Author: UserToTemplate(author),
 		// No content. A lot of the time we don't have this handy and don't need it. See AddContentVersion.
@@ -70,12 +71,29 @@ func ProjectLogoUrl(asset *models.Asset) string {
 	return ""
 }
 
+func MakeFlowsnake(seed int) Flowsnake {
+	src := rand.NewSource(int64(seed))
+	rnd := rand.New(src)
+
+	return Flowsnake{
+		Angle: rnd.Intn(FlowsnakeMaxAngle),
+		Hue:   rnd.Intn(360),
+		Size:  FlowsnakeMinSize + rnd.Intn(FlowsnakeSizeRange),
+	}
+}
+
+func MakeHilbert(seed int) Hilbert {
+	src := rand.NewSource(int64(seed))
+	rnd := rand.New(src)
+
+	return Hilbert{
+		Hue: rnd.Intn(360),
+	}
+}
+
 func ProjectToTemplate(
 	p *models.Project,
 ) Project {
-	src := rand.NewSource(int64(p.ID))
-	rnd := rand.New(src)
-
 	return Project{
 		ID:                p.ID,
 		Name:              p.Name,
@@ -86,11 +104,7 @@ func ProjectToTemplate(
 		Blurb:             p.Blurb,
 		ParsedDescription: template.HTML(p.ParsedDescription),
 
-		Flowsnake: Flowsnake{
-			Angle: rnd.Intn(FlowsnakeMaxAngle),
-			Hue:   rnd.Intn(360),
-			Size:  FlowsnakeMinSize + rnd.Intn(FlowsnakeSizeRange),
-		},
+		Flowsnake: MakeFlowsnake(p.ID),
 
 		LifecycleBadgeClass: LifecycleBadgeClasses[p.Lifecycle],
 		LifecycleString:     LifecycleBadgeStrings[p.Lifecycle],
@@ -186,9 +200,10 @@ func SessionToTemplate(s *models.Session) Session {
 
 func ThreadToTemplate(t *models.Thread) Thread {
 	return Thread{
-		Title:  t.Title,
-		Locked: t.Locked,
-		Sticky: t.Sticky,
+		Title:   t.Title,
+		Hilbert: MakeHilbert(t.ID),
+		Locked:  t.Locked,
+		Sticky:  t.Sticky,
 	}
 }
 
@@ -525,6 +540,25 @@ func JamToBannerEvent(jam hmndata.Jam) BannerEvent {
 		EndTimeUnix:    jam.EndTime.Unix(),
 		Url:            hmnurl.BuildJamGenericIndex(jam.UrlSlug),
 	}
+}
+
+func TicketToTemplate(t *models.Ticket) Ticket {
+	res := Ticket{
+		ID:            t.ID.String(),
+		OwnerName:     t.OwnerName,
+		OwnerEmail:    t.OwnerEmail,
+		OwnerUsername: t.OwnerUsername,
+		PurchaseDate:  t.PurchaseDate,
+		Notes:         t.Notes,
+
+		Url:       hmnurl.BuildTicketSingle(t.ID.String()),
+		DeleteUrl: hmnurl.BuildTicketDelete(t.ID.String()),
+	}
+	if t.OwnerUserID != nil {
+		utils.Assert(t.OwnerUsername != "")
+		res.OwnerProfileUrl = hmnurl.BuildUserProfile(t.OwnerUsername)
+	}
+	return res
 }
 
 func maybeString(s *string) string {
