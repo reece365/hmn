@@ -2,7 +2,7 @@
 
 {{ define "content" }}
 <div class="mw-site center ph3 pv4 post-content">
-    <h2 class="f3 mb4">Manage your subscription</h2>
+    <h2 class="f3 mb4">Manage your membership</h2>
 
     <div class="mw7">
         {{ if .User.IsSubscribed }}
@@ -14,7 +14,7 @@
         <div class="bg3 pa4 br2 mv4">
             <p class="c--dim f6 mb0" style="line-height:1.5;">
                 {{ if .User.CancelAtPeriodEnd }}
-                Your subscription will end at the end of the current billing period on <b>{{ .CurrentPeriodEnd }}</b>.
+                Your membership will end at the end of the current billing period on <b>{{ .CurrentPeriodEnd }}</b>.
                 {{ else }}
                 {{ if and .LastPaymentAmount .LastPaymentMethod }}
                 Your payment method on file (<b>{{ .LastPaymentMethod }}</b>) will be automatically charged for <b>{{
@@ -96,13 +96,13 @@
                     style="margin-left: 2px; opacity: 0.6; font-size: 0.6em; vertical-align: middle;">▼</small>
                 <div id="currency-dropdown" class="bg3 br2 shadow-2 dn"
                     style="position: absolute; top: 125%; left: 0; z-index: 100; min-width: 100px; border: 1px solid rgba(255,255,255,0.1); padding: 4px; font-weight: normal;">
-                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Subscribe in USD"
+                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Membership in USD"
                         style="transition: background 0.1s;" data-symbol="$" data-price-id="" data-amount="5.00"
                         onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'"
                         onmouseout="this.style.backgroundColor='transparent'">
                         $ USD
                     </div>
-                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Subscribe in EUR"
+                    <div class="currency-option pointer pv1 ph2 br1 f6" title="Membership in EUR"
                         style="transition: background 0.1s;" data-symbol="€"
                         data-price-id="price_1T2GhMC5nzOagkysG5ohH2ex" data-amount="5.00"
                         onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'"
@@ -127,7 +127,7 @@
             {{ csrftoken .Session }}
             <input type="hidden" name="price_id" id="price-id-input" value="">
             <button type="submit" class="btn btn-primary" {{ if .User.IsSubscribed
-                }}onclick="return confirm('Are you sure you want to cancel your subscription?');" {{ end }}>
+                }}onclick="return confirm('Are you sure you want to cancel your membership?');" {{ end }}>
                 {{ if .User.IsSubscribed }}Cancel{{ else }}Support Handmade{{ end }}
             </button>
         </form>

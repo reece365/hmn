@@ -11,17 +11,17 @@
 </p>
 {{ end }}
 <p>
-    Please update your payment details to keep your subscription active. You can manage your subscription at <a
+    Please update your payment details to keep your membership active. You can manage your membership at <a
         href="{{ .ManageSubscriptionUrl }}">{{ .ManageSubscriptionUrl }}</a>.
 </p>
 {{ if .NextAttemptDate }}
 <p>
     Stripe will automatically retry the charge on <b>{{ .NextAttemptDate }}</b>. If the payment continues to fail, your
-    subscription may be cancelled.
+    membership may be cancelled.
 </p>
 {{ else }}
 <p>
-    If the payment issue is not resolved, your subscription may be cancelled.
+    If the payment issue is not resolved, your membership may be cancelled.
 </p>
 {{ end }}
 <p>Thanks,<br />

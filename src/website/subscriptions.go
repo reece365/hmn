@@ -2,9 +2,7 @@ package website
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,7 +17,6 @@ import (
 	"git.handmade.network/hmn/hmn/src/oops"
 	"git.handmade.network/hmn/hmn/src/templates"
 	"github.com/stripe/stripe-go/v84"
-	"github.com/stripe/stripe-go/v84/webhook"
 )
 
 type PaymentHistoryItem struct {
@@ -106,7 +103,7 @@ func SubscriptionManage(c *RequestContext) ResponseData {
 
 	var res ResponseData
 	res.MustWriteTemplate("manage_subscription.html", ManageSubscriptionTemplateData{
-		BaseData:              getBaseData(c, "Manage Subscription", nil),
+		BaseData:              getBaseData(c, "Manage Membership", nil),
 		SubscribeUrl:          hmnurl.BuildSubscriptionSubscribe(),
 		CancelSubscriptionUrl: hmnurl.BuildSubscriptionCancel(),
 		ResumeSubscriptionUrl: hmnurl.BuildSubscriptionResume(),
@@ -250,74 +247,7 @@ func SubscriptionResume(c *RequestContext) ResponseData {
 	return c.Redirect(hmnurl.BuildSubscriptionManage(), http.StatusSeeOther)
 }
 
-func SubscriptionWebhook(c *RequestContext) ResponseData {
-	const MaxBodyBytes = int64(65536)
-	payload, err := io.ReadAll(io.LimitReader(c.Req.Body, MaxBodyBytes))
-	if err != nil {
-		return ResponseData{StatusCode: http.StatusBadRequest}
-	}
 
-	event, err := webhook.ConstructEventWithOptions(payload, c.Req.Header.Get("Stripe-Signature"), config.Config.Stripe.WebhookSecret, webhook.ConstructEventOptions{
-		IgnoreAPIVersionMismatch: true,
-	})
-	if err != nil {
-		logging.Error().Err(err).Msg("failed to verify Stripe webhook signature")
-		return ResponseData{StatusCode: http.StatusBadRequest}
-	}
-
-	logging.Info().Str("type", string(event.Type)).Msg("received Stripe webhook")
-
-	sc := stripe.NewClient(config.Config.Stripe.SecretKey)
-
-	switch event.Type {
-	case "checkout.session.completed":
-		var session stripe.CheckoutSession
-		if err := json.Unmarshal(event.Data.Raw, &session); err == nil {
-			handleCheckoutSessionCompleted(c, sc, &session)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal checkout.session.completed")
-		}
-	case "customer.subscription.created":
-		var sub stripe.Subscription
-		if err := json.Unmarshal(event.Data.Raw, &sub); err == nil {
-			handleSubscriptionCreated(c, sc, &sub)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal customer.subscription.created")
-		}
-
-	case "customer.subscription.updated":
-		var sub stripe.Subscription
-		if err := json.Unmarshal(event.Data.Raw, &sub); err == nil {
-			logging.Trace().RawJSON("sub_json", event.Data.Raw).Msg("received subscription update JSON")
-			handleSubscriptionUpdated(c, sc, &sub)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal customer.subscription.updated")
-		}
-	case "customer.subscription.deleted":
-		var sub stripe.Subscription
-		if err := json.Unmarshal(event.Data.Raw, &sub); err == nil {
-			handleSubscriptionDeleted(c, sc, &sub)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal customer.subscription.deleted")
-		}
-	case "invoice.paid":
-		var inv stripe.Invoice
-		if err := json.Unmarshal(event.Data.Raw, &inv); err == nil {
-			handleInvoicePaid(c, sc, &inv)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal invoice.paid")
-		}
-	case "invoice.payment_failed":
-		var inv stripe.Invoice
-		if err := json.Unmarshal(event.Data.Raw, &inv); err == nil {
-			handleInvoicePaymentFailed(c, sc, &inv)
-		} else {
-			logging.Error().Err(err).Msg("failed to unmarshal invoice.payment_failed")
-		}
-	}
-
-	return ResponseData{StatusCode: http.StatusOK}
-}
 
 func handleSubscriptionCreated(c *RequestContext, sc *stripe.Client, sub *stripe.Subscription) {
 	// Link user if possible. Early registration.

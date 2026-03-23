@@ -141,7 +141,7 @@ func SendSubscriptionCancelledEmail(
 
 	b2 := perf.StartBlock("EMAIL", "Sending email")
 	defer b2.End()
-	err = sendMail(toAddress, toName, "[Handmade Software Foundation] Subscription cancelled", contents)
+	err = sendMail(toAddress, toName, "[Handmade Software Foundation] Membership cancelled", contents)
 	if err != nil {
 		return oops.New(err, "Failed to send email")
 	}
